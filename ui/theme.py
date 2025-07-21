@@ -1,0 +1,38 @@
+from PyQt5.QtGui import QPalette, QColor
+from PyQt5.QtCore import Qt
+
+def set_dark_theme(window):
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(30, 30, 30))
+    palette.setColor(QPalette.WindowText, Qt.white)
+    palette.setColor(QPalette.Base, QColor(25, 25, 25))
+    palette.setColor(QPalette.AlternateBase, QColor(40, 40, 40))
+    palette.setColor(QPalette.ToolTipBase, Qt.white)
+    palette.setColor(QPalette.ToolTipText, Qt.white)
+    palette.setColor(QPalette.Text, Qt.white)
+    palette.setColor(QPalette.Button, QColor(45, 45, 45))
+    palette.setColor(QPalette.ButtonText, Qt.white)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    palette.setColor(QPalette.HighlightedText, Qt.black)
+    window.setPalette(palette)
+    window.setStyleSheet("QWidget { background-color: #1e1e1e; color: #ffffff; } QMenuBar { background-color: #232323; color: #ffffff; } QMenu { background-color: #232323; color: #ffffff; }")
+
+def set_light_theme(window):
+    palette = QPalette()
+    palette.setColor(QPalette.Window, Qt.white)
+    palette.setColor(QPalette.WindowText, Qt.black)
+    palette.setColor(QPalette.Base, Qt.white)
+    palette.setColor(QPalette.AlternateBase, QColor(245, 245, 245))
+    palette.setColor(QPalette.ToolTipBase, Qt.black)
+    palette.setColor(QPalette.ToolTipText, Qt.black)
+    palette.setColor(QPalette.Text, Qt.black)
+    palette.setColor(QPalette.Button, QColor(240, 240, 240))
+    palette.setColor(QPalette.ButtonText, Qt.black)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, QColor(0, 122, 204))
+    palette.setColor(QPalette.Highlight, QColor(0, 122, 204))
+    palette.setColor(QPalette.HighlightedText, Qt.white)
+    window.setPalette(palette)
+    window.setStyleSheet("QWidget { background-color: #ffffff; color: #000000; } QMenuBar { background-color: #f5f5f5; color: #000000; } QMenu { background-color: #f5f5f5; color: #000000; }")
