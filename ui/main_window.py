@@ -220,7 +220,12 @@ class MainWindow(QMainWindow):
         self.divider3.setStyleSheet("color: #888; background: #888; height: 2px;")
         self.layout.addWidget(self.divider3)
 
-        # Consensus section
+        # Consensus section (collapsible, hidden by default)
+        self.consensus_toggle_btn = QPushButton("Show Consensus Insights")
+        self.consensus_toggle_btn.setCheckable(True)
+        self.consensus_toggle_btn.setChecked(False)
+        self.consensus_toggle_btn.clicked.connect(self.toggle_consensus_insights)
+        self.layout.addWidget(self.consensus_toggle_btn)
         self.consensus_label = QLabel("[Consensus Placeholder]", self)
         self.consensus_label.setAlignment(Qt.AlignCenter)
         self.consensus_label.setWordWrap(True)
@@ -319,6 +324,9 @@ class MainWindow(QMainWindow):
             f"<b>Overall Suggestion:</b> {consensus['suggestion']}"
         )
         self.consensus_label.setText(consensus_left)
+        self.consensus_label.setVisible(False)
+        self.consensus_toggle_btn.setChecked(False)
+        self.consensus_toggle_btn.setText("Show Consensus Insights")
         # Consensus LLM output as QTextBrowser
         self.consensus_llm_label = getattr(self, 'consensus_llm_label', None)
         if not self.consensus_llm_label:
@@ -424,6 +432,11 @@ class MainWindow(QMainWindow):
 
     def update_llm_consensus(self, text):
         self.consensus_llm_label.setMarkdown(text)
+
+    def toggle_consensus_insights(self):
+        show = self.consensus_toggle_btn.isChecked()
+        self.consensus_label.setVisible(show)
+        self.consensus_toggle_btn.setText("Hide Consensus Insights" if show else "Show Consensus Insights")
 
     def _cleanup_threads(self):
         # Remove finished threads from the list
