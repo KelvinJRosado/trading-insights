@@ -25,7 +25,7 @@ class LLMWorker(QThread):
     async def call_ollama(self):
         prompt = f"You are {self.persona}, a financial advisor. Here are the trading insights: {self.insights}. Please explain these insights in simple, friendly English for a non-expert investor."
         try:
-            response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
+            response = await ollama.AsyncClient().generate(model='llama4', prompt=prompt)
             return response['response'].strip()
         except Exception as e:
             return f"[LLM error: {e}]"
@@ -43,7 +43,7 @@ class ConsensusLLMWorker(QThread):
     async def call_ollama(self):
         prompt = f"You are a panel of financial advisors. Here is the consensus of their trading insights: {self.insights}. Please explain the consensus in simple, friendly English for a non-expert investor."
         try:
-            response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
+            response = await ollama.AsyncClient().generate(model='llama4', prompt=prompt)
             return response['response'].strip()
         except Exception as e:
             return f"[LLM error: {e}]"
