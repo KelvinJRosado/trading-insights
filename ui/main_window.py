@@ -93,16 +93,14 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
-        # Menu bar for theme switching
+        # Menu bar for theme switching (remove dark mode)
         menubar = QMenuBar(self)
         view_menu = menubar.addMenu("View")
-        self.dark_action = QAction("Dark Mode", self, checkable=True, checked=True)
-        self.light_action = QAction("Light Mode", self, checkable=True)
-        view_menu.addAction(self.dark_action)
+        self.light_action = QAction("Light Mode", self, checkable=True, checked=True)
         view_menu.addAction(self.light_action)
         self.setMenuBar(menubar)
-        self.dark_action.triggered.connect(self.set_dark_mode)
-        self.light_action.triggered.connect(self.set_light_mode)
+        self.light_action.setChecked(True)
+        self.light_action.setEnabled(False)
 
         # Add top spacer (larger)
         self.layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Fixed))
@@ -215,18 +213,13 @@ class MainWindow(QMainWindow):
         # Set background color for main window
         self.central_widget.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #232b36, stop:1 #1e1e1e);")
 
-        set_dark_theme(self)
+        set_light_theme(self)
         self.load_price_data("24h")
 
     def set_dark_mode(self):
-        self.dark_action.setChecked(True)
-        self.light_action.setChecked(False)
-        set_dark_theme(self)
-        self.price_graph.set_theme(True)
+        pass  # No-op
 
     def set_light_mode(self):
-        self.dark_action.setChecked(False)
-        self.light_action.setChecked(True)
         set_light_theme(self)
         self.price_graph.set_theme(False)
 
