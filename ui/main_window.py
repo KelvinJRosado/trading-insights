@@ -9,15 +9,20 @@ import numpy as np
 from collections import Counter
 import ollama
 import asyncio
+import hashlib
+import json
+
+# Global LLM response cache
+llm_cache = {}
 
 class LLMWorker(QThread):
     result_ready = pyqtSignal(int, str)
-    def __init__(self, idx, persona, insights, method, llm_outputs, parent=None):
+    def __init__(self, idx, persona, all_method_insights, coin_name, llm_outputs, parent=None):
         super().__init__(parent)
         self.idx = idx
         self.persona = persona
-        self.insights = insights
-        self.method = method
+        self.all_method_insights = all_method_insights
+        self.coin_name = coin_name
         self.llm_outputs = llm_outputs
     def run(self):
         loop = asyncio.new_event_loop()
@@ -29,7 +34,16 @@ class LLMWorker(QThread):
         if all(self.llm_outputs):
             self.parent().start_consensus_llm(self.llm_outputs)
     async def call_ollama(self):
-        # Inject advisor personality and method into the prompt
+        # Create cache key based on persona, coin, and all method insights hash
+        cache_key = hashlib.md5(
+            f"{self.persona}|{self.coin_name}|{str(self.all_method_insights)}".encode()
+        ).hexdigest()
+        
+        # Check cache first
+        if cache_key in llm_cache:
+            return llm_cache[cache_key]
+        
+        # Inject advisor personality into the prompt
         if self.persona == "Conservative Carl":
             personality = (
                 "You are Conservative Carl, a financial advisor who always prioritizes minimizing risk, playing it safe, and steady, reliable growth. "
@@ -50,38 +64,69 @@ class LLMWorker(QThread):
             )
         else:
             personality = f"You are {self.persona}, a financial advisor."
+        
+        # Format all method insights for the prompt
+        insights_text = f"The cryptocurrency you are analyzing is {self.coin_name}.\n\n"
+        insights_text += "You have access to analysis from multiple methods. Here are the insights from each:\n\n"
+        
+        for i, method_data in enumerate(self.all_method_insights):
+            insights_text += f"Method {i+1} - {method_data['method']}:\n"
+            insights_text += f"- Short-term: {method_data['short']}\n"
+            insights_text += f"- Medium-term: {method_data['medium']}\n" 
+            insights_text += f"- Long-term: {method_data['long']}\n"
+            insights_text += f"- Buy recommendation: {method_data['buy']}\n"
+            insights_text += f"- Sell recommendation: {method_data['sell']}\n"
+            insights_text += f"- Overall suggestion: {method_data['suggestion']}\n"
+            insights_text += f"- Reasoning: {method_data['reason']}\n\n"
+        
         prompt = (
             f"{personality}\n\n"
-            f"The method you used to generate these insights is: {self.method}.\n"
+            f"{insights_text}"
             "Your goal is to help your client make the greatest gains, but your advice should reflect your unique personality. "
-            f"Here are the trading insights: {self.insights}. "
-            "Please explain these insights in simple, friendly English for a non-expert investor, and make sure your suggestions reflect your personal style."
+            f"Please analyze all these different methods' insights about {self.coin_name} and provide your consolidated recommendation in simple, friendly English for a non-expert investor. "
+            "Make sure your suggestions reflect your personal advisory style and consider the consensus and differences between the methods."
         )
         try:
             response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
-            return response['response'].strip()
+            result = response['response'].strip()
+            # Cache the result
+            llm_cache[cache_key] = result
+            return result
         except Exception as e:
             return f"[LLM error: {e}]"
 
 class ConsensusLLMWorker(QThread):
     result_ready = pyqtSignal(str)
-    def __init__(self, advisor_outputs, parent=None):
+    def __init__(self, advisor_outputs, coin_name, parent=None):
         super().__init__(parent)
         self.advisor_outputs = advisor_outputs
+        self.coin_name = coin_name
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         result = loop.run_until_complete(self.call_ollama())
         self.result_ready.emit(result)
     async def call_ollama(self):
+        # Create cache key based on all advisor outputs and coin name
+        cache_key = hashlib.md5(
+            f"consensus|{self.coin_name}|{'|'.join(self.advisor_outputs)}".encode()
+        ).hexdigest()
+        
+        # Check cache first
+        if cache_key in llm_cache:
+            return llm_cache[cache_key]
+        
         prompt = (
-            "You are a panel of financial advisors. Here are the opinions of three advisors: "
+            f"You are a panel of financial advisors analyzing {self.coin_name}. Here are the opinions of three advisors: "
             f"\n\nAdvisor 1: {self.advisor_outputs[0]}\n\nAdvisor 2: {self.advisor_outputs[1]}\n\nAdvisor 3: {self.advisor_outputs[2]}\n\n"
-            "Please summarize the consensus in simple, friendly English for a non-expert investor, focusing on maximizing gains."
+            f"Please summarize the consensus about {self.coin_name} in simple, friendly English for a non-expert investor, focusing on maximizing gains."
         )
         try:
             response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
-            return response['response'].strip()
+            result = response['response'].strip()
+            # Cache the result
+            llm_cache[cache_key] = result
+            return result
         except Exception as e:
             return f"[LLM error: {e}]"
 
@@ -110,17 +155,37 @@ class MainWindow(QMainWindow):
         # Add top spacer (larger)
         self.layout.addSpacing(30)
 
+        # Coin and Timeframe selectors on same row
+        controls_layout = QHBoxLayout()
+        
+        # Coin selector
+        coin_label = QLabel("Crypto:", self)
+        coin_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.coin_combo = QComboBox(self)
+        self.coin_combo.addItems(["Bitcoin (BTC)", "Ethereum (ETH)", "Dogecoin (DOGE)", "Solana (SOL)", "XRP (XRP)"])
+        self.coin_combo.setCurrentText("Bitcoin (BTC)")
+        self.coin_combo.currentTextChanged.connect(self.on_coin_changed)
+        controls_layout.addWidget(coin_label)
+        controls_layout.addWidget(self.coin_combo)
+        
+        # Add some space between the dropdowns
+        controls_layout.addSpacing(20)
+        
         # Timeframe selector
-        timeframe_layout = QHBoxLayout()
+        timeframe_label = QLabel("Timeframe:", self)
+        timeframe_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.timeframe_combo = QComboBox(self)
         self.timeframe_combo.addItems(["1h", "24h", "7d"])
         self.timeframe_combo.setCurrentText("24h")
         self.timeframe_combo.currentTextChanged.connect(self.on_timeframe_changed)
-        timeframe_label = QLabel("Timeframe:", self)
-        timeframe_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        timeframe_layout.addWidget(timeframe_label)
-        timeframe_layout.addWidget(self.timeframe_combo)
-        self.layout.addLayout(timeframe_layout)
+        controls_layout.addWidget(timeframe_label)
+        controls_layout.addWidget(self.timeframe_combo)
+        
+        # Add stretch to push everything to the left
+        controls_layout.addStretch()
+        
+        self.layout.addLayout(controls_layout)
+        self.selected_coin = "bitcoin"  # Internal id for API
 
         # Price graph widget (more space)
         self.price_graph = PriceGraphWidget(self, dark_mode=False)
@@ -255,8 +320,9 @@ class MainWindow(QMainWindow):
         self.price_graph.set_theme(False)
 
     def load_price_data(self, timeframe="24h"):
-        data = get_prices_for_timeframe(timeframe)
-        self.price_graph.plot_prices(data, title=f"Bitcoin Price ({timeframe})")
+        # Pass selected coin to data fetcher
+        data = get_prices_for_timeframe(timeframe, coin_id=self.selected_coin)
+        self.price_graph.plot_prices(data, title=f"{self.coin_combo.currentText()} Price ({timeframe})")
         # Compute and display trading insights
         prices = [price for _, price in data]
         insights = get_trading_insights(prices)
@@ -286,34 +352,43 @@ class MainWindow(QMainWindow):
     def display_suggestions_and_consensus(self, insights, prices):
         advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
         methods = ["Technical Analysis", "Momentum Model", "Simple ML"]
-        all_suggestions = []
+        
+        # First, generate insights for all methods
+        all_method_insights = []
+        for method in methods:
+            suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
+            all_method_insights.append({
+                'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 
+                'suggestion': suggestion, 'reason': reason, 'method': method
+            })
+        
+        # Display each method's insights in the respective advisor tab and start LLM workers
         self._cleanup_threads()  # Clean up finished threads before starting new ones
         self.llm_outputs = [None, None, None]  # Store LLM outputs for consensus
-        for i, method in enumerate(methods):
-            suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
+        
+        for i, advisor_name in enumerate(advisor_names):
+            # Show the individual method that was originally assigned to this tab
+            method_data = all_method_insights[i]
             left_text = (
-                f"<b>Short-term:</b> {st}<br>"
-                f"<b>Medium-term:</b> {mt}<br>"
-                f"<b>Long-term:</b> {lt}<br>"
-                f"<b>Buy now:</b> {buy}<br>"
-                f"<b>Sell now:</b> {sell}<br>"
-                f"<b>Suggestion:</b> {suggestion}<br>"
-                f"<b>Reasoning:</b> {reason}"
+                f"<b>Method:</b> {method_data['method']}<br>"
+                f"<b>Short-term:</b> {method_data['short']}<br>"
+                f"<b>Medium-term:</b> {method_data['medium']}<br>"
+                f"<b>Long-term:</b> {method_data['long']}<br>"
+                f"<b>Buy now:</b> {method_data['buy']}<br>"
+                f"<b>Sell now:</b> {method_data['sell']}<br>"
+                f"<b>Suggestion:</b> {method_data['suggestion']}<br>"
+                f"<b>Reasoning:</b> {method_data['reason']}"
             )
             self.suggestion_widgets[i].setText(left_text)
             self.llm_widgets[i].setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
-            all_suggestions.append({
-                'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 'suggestion': suggestion,
-                'reason': reason, 'advisor': advisor_names[i], 'method': method
-            })
-            persona = advisor_names[i]
-            insights_str = left_text.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
-            worker = LLMWorker(i, persona, insights_str, method, self.llm_outputs, self)
+            
+            # Pass ALL method insights to each advisor
+            worker = LLMWorker(i, advisor_name, all_method_insights, self.coin_combo.currentText(), self.llm_outputs, self)
             worker.result_ready.connect(self.update_llm_tab)
             worker.finished.connect(lambda: self._cleanup_threads())
             self.llm_threads.append(worker)
             worker.start()
-        consensus = self._generate_consensus(all_suggestions)
+        consensus = self._generate_consensus(all_method_insights)
         consensus_left = (
             f"<b>Consensus Insights</b><br>"
             f"<b>Short-term:</b> {consensus['short']}<br>"
@@ -423,6 +498,18 @@ class MainWindow(QMainWindow):
     def on_timeframe_changed(self, timeframe):
         self.load_price_data(timeframe)
 
+    def on_coin_changed(self, coin_name):
+        # Map display name to API id
+        coin_map = {
+            "Bitcoin (BTC)": "bitcoin", 
+            "Ethereum (ETH)": "ethereum",
+            "Dogecoin (DOGE)": "dogecoin",
+            "Solana (SOL)": "solana", 
+            "XRP (XRP)": "ripple"
+        }
+        self.selected_coin = coin_map.get(coin_name, "bitcoin")
+        self.load_price_data(self.timeframe_combo.currentText())
+
     def update_llm_tab(self, idx, text):
         self.llm_widgets[idx].setMarkdown(text)
         # If all advisor outputs are ready, trigger consensus LLM
@@ -450,7 +537,7 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def start_consensus_llm(self, advisor_outputs):
-        worker = ConsensusLLMWorker(advisor_outputs)
+        worker = ConsensusLLMWorker(advisor_outputs, self.coin_combo.currentText())
         worker.result_ready.connect(self.update_llm_consensus)
         worker.finished.connect(lambda: self._cleanup_threads())
         self.llm_threads.append(worker)
