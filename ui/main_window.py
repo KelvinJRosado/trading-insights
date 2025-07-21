@@ -241,8 +241,13 @@ class MainWindow(QMainWindow):
         self.display_prediction(prices)
 
     def display_insights(self, insights):
+        # Set the insights text in the currently selected tab's label
+        idx = self.suggestion_tabs.currentIndex()
+        if idx < 0 or idx >= len(self.suggestion_widgets):
+            return
+        label = self.suggestion_widgets[idx]
         if not insights or insights['high'] is None or insights['low'] is None:
-            self.insights_label.setText("No trading insights available.")
+            label.setText("No trading insights available.")
             return
         # Add tooltips for each metric
         high = f'<span title="Highest price in the selected timeframe">High: {insights["high"]:.2f}</span>'
@@ -252,7 +257,7 @@ class MainWindow(QMainWindow):
         text = (
             f"{high} &nbsp; {low} &nbsp; {rsi} &nbsp; {ma}"
         )
-        self.insights_label.setText(text)
+        label.setText(text)
 
     def display_suggestions_and_consensus(self, insights, prices):
         advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
