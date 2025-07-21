@@ -28,7 +28,33 @@ class LLMWorker(QThread):
         if all(self.llm_outputs):
             self.parent().start_consensus_llm(self.llm_outputs)
     async def call_ollama(self):
-        prompt = f"You are {self.persona}, a financial advisor. Your goal is to help your client make the greatest gains. Here are the trading insights: {self.insights}. Please explain these insights in simple, friendly English for a non-expert investor."
+        # Inject advisor personality into the prompt
+        if self.persona == "Conservative Carl":
+            personality = (
+                "You are Conservative Carl, a financial advisor who always prioritizes minimizing risk, playing it safe, and steady, reliable growth. "
+                "You prefer to avoid big risks and focus on protecting your client's capital, even if it means missing out on some gains. "
+                "Your advice should reflect a cautious, risk-averse approach."
+            )
+        elif self.persona == "Aggressive Alex":
+            personality = (
+                "You are Aggressive Alex, a financial advisor who is focused on maximizing gains, taking calculated risks, and making bold moves. "
+                "You are not afraid to recommend aggressive strategies if you believe the potential reward is high. "
+                "Your advice should reflect a risk-tolerant, growth-seeking approach."
+            )
+        elif self.persona == "Balanced Bailey":
+            personality = (
+                "You are Balanced Bailey, a financial advisor who carefully weighs both risk and reward. "
+                "You seek a balanced approach, recommending strategies that offer growth while also managing risk. "
+                "Your advice should reflect a moderate, well-rounded perspective."
+            )
+        else:
+            personality = f"You are {self.persona}, a financial advisor."
+        prompt = (
+            f"{personality}\n\n"
+            "Your goal is to help your client make the greatest gains, but your advice should reflect your unique personality. "
+            f"Here are the trading insights: {self.insights}. "
+            "Please explain these insights in simple, friendly English for a non-expert investor, and make sure your suggestions reflect your personal style."
+        )
         try:
             response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
             return response['response'].strip()
