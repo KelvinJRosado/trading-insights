@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem
 from PyQt5.QtCore import Qt
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
@@ -28,6 +28,9 @@ class MainWindow(QMainWindow):
         self.dark_action.triggered.connect(self.set_dark_mode)
         self.light_action.triggered.connect(self.set_light_mode)
 
+        # Add top spacer
+        self.layout.addItem(QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
+
         # Timeframe selector
         timeframe_layout = QHBoxLayout()
         self.timeframe_combo = QComboBox(self)
@@ -44,10 +47,24 @@ class MainWindow(QMainWindow):
         self.price_graph = PriceGraphWidget(self, dark_mode=True)
         self.layout.addWidget(self.price_graph)
 
+        # Divider below graph
+        self.divider1 = QFrame()
+        self.divider1.setFrameShape(QFrame.HLine)
+        self.divider1.setFrameShadow(QFrame.Sunken)
+        self.divider1.setStyleSheet("color: #888; background: #888; height: 2px;")
+        self.layout.addWidget(self.divider1)
+
         # Trading insights section
         self.insights_label = QLabel("[Trading Insights Placeholder]", self)
         self.insights_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.insights_label)
+
+        # Divider below insights
+        self.divider2 = QFrame()
+        self.divider2.setFrameShape(QFrame.HLine)
+        self.divider2.setFrameShadow(QFrame.Sunken)
+        self.divider2.setStyleSheet("color: #888; background: #888; height: 2px;")
+        self.layout.addWidget(self.divider2)
 
         # Suggestion section as tabs
         self.suggestion_tabs = QTabWidget(self)
@@ -56,22 +73,33 @@ class MainWindow(QMainWindow):
         self.suggestion_tabs.setMovable(False)
         self.suggestion_tabs.setUsesScrollButtons(False)
         self.suggestion_tabs.setDocumentMode(True)
+        self.suggestion_tabs.setStyleSheet("QTabBar::tab { min-width: 33%; padding: 10px; font-weight: bold; } QTabWidget::pane { border: none; }")
         self.suggestion_widgets = []
         for i, label in enumerate(["Technical Analysis", "Momentum Model", "Simple ML"]):
             tab = QWidget()
             tab.layout = QVBoxLayout(tab)
             label_widget = QLabel(f"[Suggestions for {label}]")
-            label_widget.setAlignment(Qt.AlignCenter)
+            label_widget.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             label_widget.setWordWrap(True)
+            label_widget.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
             tab.layout.addWidget(label_widget)
             self.suggestion_tabs.addTab(tab, label)
             self.suggestion_widgets.append(label_widget)
+        self.suggestion_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.layout.addWidget(self.suggestion_tabs)
+
+        # Divider below tabs
+        self.divider3 = QFrame()
+        self.divider3.setFrameShape(QFrame.HLine)
+        self.divider3.setFrameShadow(QFrame.Sunken)
+        self.divider3.setStyleSheet("color: #888; background: #888; height: 2px;")
+        self.layout.addWidget(self.divider3)
 
         # Consensus section
         self.consensus_label = QLabel("[Consensus Placeholder]", self)
         self.consensus_label.setAlignment(Qt.AlignCenter)
         self.consensus_label.setWordWrap(True)
+        self.consensus_label.setStyleSheet("font-size: 15px; font-weight: bold; padding: 12px; background: #232b36; border-radius: 8px; color: #fff;")
         self.layout.addWidget(self.consensus_label)
 
         # Prediction section
@@ -79,6 +107,9 @@ class MainWindow(QMainWindow):
         self.prediction_label.setAlignment(Qt.AlignCenter)
         self.prediction_label.setWordWrap(True)
         self.layout.addWidget(self.prediction_label)
+
+        # Set background color for main window
+        self.central_widget.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #232b36, stop:1 #1e1e1e);")
 
         set_dark_theme(self)
         self.load_price_data("24h")
@@ -155,21 +186,23 @@ class MainWindow(QMainWindow):
         ma = insights.get('ma_signal')
         suggestion = ""
         reason = ""
+        emoji_buy = "✅" if rsi == 'buy' or ma == 'buy' else "❌"
+        emoji_sell = "✅" if rsi == 'sell' or ma == 'sell' else "❌"
         if rsi == 'buy' or ma == 'buy':
-            suggestion = "Consider buying."
+            suggestion = f"<span style='color:#4caf50;'>Consider buying. {emoji_buy}</span>"
             reason = f"{method}: RSI indicates oversold (RSI < 30) or price has crossed above the moving average."
         elif rsi == 'sell' or ma == 'sell':
-            suggestion = "Consider selling."
+            suggestion = f"<span style='color:#e53935;'>Consider selling. {emoji_sell}</span>"
             reason = f"{method}: RSI indicates overbought (RSI > 70) or price has crossed below the moving average."
         else:
-            suggestion = "Hold or wait."
+            suggestion = f"<span style='color:#ffb300;'>Hold or wait. ⚠️</span>"
             reason = f"{method}: No strong buy/sell signals from RSI or moving average."
         # Short/medium/long-term price change (placeholder)
         st = "Likely small change"
         mt = "Likely moderate change"
         lt = "Trend unclear"
-        buy = "Yes" if rsi == 'buy' or ma == 'buy' else "No"
-        sell = "Yes" if rsi == 'sell' or ma == 'sell' else "No"
+        buy = f"Yes {emoji_buy}" if rsi == 'buy' or ma == 'buy' else f"No ❌"
+        sell = f"Yes {emoji_sell}" if rsi == 'sell' or ma == 'sell' else f"No ❌"
         return suggestion, reason, st, mt, lt, buy, sell
 
     def _generate_consensus(self, all_suggestions):
@@ -184,6 +217,15 @@ class MainWindow(QMainWindow):
             'sell': most_common([s['sell'] for s in all_suggestions]),
             'suggestion': most_common([s['suggestion'] for s in all_suggestions]),
         }
+        # Add emoji and color to consensus suggestion
+        suggestion = consensus['suggestion']
+        if 'buy' in suggestion.lower():
+            suggestion = f"<span style='color:#4caf50;'>Consider buying. ✅</span>"
+        elif 'sell' in suggestion.lower():
+            suggestion = f"<span style='color:#e53935;'>Consider selling. ❌</span>"
+        else:
+            suggestion = f"<span style='color:#ffb300;'>Hold or wait. ⚠️</span>"
+        consensus['suggestion'] = suggestion
         return consensus
 
     def display_prediction(self, prices):
