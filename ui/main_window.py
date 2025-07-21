@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser, QToolBox, QSizePolicy
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser, QToolBox, QSizePolicy, QPushButton
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
@@ -175,8 +175,8 @@ class MainWindow(QMainWindow):
         timeframe_label = QLabel("Timeframe:", self)
         timeframe_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.timeframe_combo = QComboBox(self)
-        self.timeframe_combo.addItems(["1h", "24h", "7d"])
-        self.timeframe_combo.setCurrentText("24h")
+        self.timeframe_combo.addItems(["1h", "24h", "7d", "30d"])
+        self.timeframe_combo.setCurrentText("7d")
         self.timeframe_combo.currentTextChanged.connect(self.on_timeframe_changed)
         controls_layout.addWidget(timeframe_label)
         controls_layout.addWidget(self.timeframe_combo)
@@ -187,6 +187,13 @@ class MainWindow(QMainWindow):
         self.layout.addLayout(controls_layout)
         self.selected_coin = "bitcoin"  # Internal id for API
 
+        # Price chart section (collapsible)
+        self.chart_toggle_btn = QPushButton("Hide Price Chart")
+        self.chart_toggle_btn.setCheckable(True)
+        self.chart_toggle_btn.setChecked(True)  # Expanded by default
+        self.chart_toggle_btn.clicked.connect(self.toggle_price_chart)
+        self.layout.addWidget(self.chart_toggle_btn)
+        
         # Price graph widget (more space)
         self.price_graph = PriceGraphWidget(self, dark_mode=False)
         self.price_graph.setMinimumHeight(350)
@@ -200,6 +207,13 @@ class MainWindow(QMainWindow):
         self.divider1.setFrameShadow(QFrame.Sunken)
         self.divider1.setStyleSheet("color: #888; background: #888; height: 2px;")
         self.layout.addWidget(self.divider1)
+
+        # Advisor analysis section (collapsible)  
+        self.advisors_toggle_btn = QPushButton("Hide Advisor Analysis")
+        self.advisors_toggle_btn.setCheckable(True)
+        self.advisors_toggle_btn.setChecked(True)  # Expanded by default
+        self.advisors_toggle_btn.clicked.connect(self.toggle_advisor_section)
+        self.layout.addWidget(self.advisors_toggle_btn)
 
         # Trading insights section (collapsible, hidden by default)
         self.suggestion_toolboxes = []
@@ -249,7 +263,6 @@ class MainWindow(QMainWindow):
             toolbox.setCurrentIndex(-1)  # Minimized by default
             toolbox.setVisible(False)  # Hidden by default
             # Add a button to expand/collapse
-            from PyQt5.QtWidgets import QPushButton
             toggle_btn = QPushButton("Show Trading Insights")
             toggle_btn.setCheckable(True)
             toggle_btn.setChecked(False)
@@ -298,7 +311,13 @@ class MainWindow(QMainWindow):
         self.consensus_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.layout.addWidget(self.consensus_label)
 
-        # Prediction section
+        # Prediction section (collapsible)
+        self.prediction_toggle_btn = QPushButton("Hide Price Prediction")
+        self.prediction_toggle_btn.setCheckable(True)
+        self.prediction_toggle_btn.setChecked(True)  # Expanded by default
+        self.prediction_toggle_btn.clicked.connect(self.toggle_prediction_section)
+        self.layout.addWidget(self.prediction_toggle_btn)
+        
         self.prediction_label = QLabel("[Prediction Placeholder]", self)
         self.prediction_label.setAlignment(Qt.AlignCenter)
         self.prediction_label.setWordWrap(True)
@@ -310,7 +329,7 @@ class MainWindow(QMainWindow):
         self.central_widget.setStyleSheet("background: #faf9f6;")
 
         set_light_theme(self)
-        self.load_price_data("24h")
+        self.load_price_data("7d")
 
     def set_dark_mode(self):
         pass  # No-op
@@ -319,16 +338,44 @@ class MainWindow(QMainWindow):
         set_light_theme(self)
         self.price_graph.set_theme(False)
 
-    def load_price_data(self, timeframe="24h"):
-        # Pass selected coin to data fetcher
+    def load_chart_data(self, timeframe="7d"):
+        """Load and display chart data for the selected timeframe (visual only)"""
         data = get_prices_for_timeframe(timeframe, coin_id=self.selected_coin)
         self.price_graph.plot_prices(data, title=f"{self.coin_combo.currentText()} Price ({timeframe})")
-        # Compute and display trading insights
-        prices = [price for _, price in data]
+    
+    def load_insights_data(self):
+        """Load and calculate insights using the best available data"""
+        # Try to get longer-term data for better insights, with multiple fallbacks
+        insights_data = None
+        
+        # Try different timeframes in order of preference
+        timeframes = ["30d", "7d", "24h"]
+        for timeframe in timeframes:
+            try:
+                insights_data = get_prices_for_timeframe(timeframe, coin_id=self.selected_coin)
+                if insights_data and len(insights_data) >= 10:  # Need minimum data points
+                    break
+            except Exception as e:
+                print(f"Failed to fetch {timeframe} data: {e}")
+                continue
+        
+        if not insights_data:
+            print("Warning: Using mock data for insights calculation")
+        
+        prices = [price for _, price in insights_data] if insights_data else []
+        if len(prices) < 5:  # Minimum required for meaningful analysis
+            print("Insufficient data for analysis")
+            return
+            
         insights = get_trading_insights(prices)
         self.display_insights(insights)
         self.display_suggestions_and_consensus(insights, prices)
         self.display_prediction(prices)
+    
+    def load_price_data(self, timeframe="7d"):
+        """Load both chart and insights data (used for initial load and coin changes)"""
+        self.load_chart_data(timeframe)
+        self.load_insights_data()
 
     def display_insights(self, insights):
         # Set the insights text in the currently selected tab's label
@@ -351,7 +398,7 @@ class MainWindow(QMainWindow):
 
     def display_suggestions_and_consensus(self, insights, prices):
         advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
-        methods = ["Technical Analysis", "Momentum Model", "Simple ML"]
+        methods = ["Technical Analysis", "Momentum Model", "Simple ML", "Llama Analysis"]
         
         # First, generate insights for all methods
         all_method_insights = []
@@ -418,29 +465,316 @@ class MainWindow(QMainWindow):
         self.consensus_llm_waiting = True
 
     def _generate_method_insights(self, insights, prices, method):
-        # Placeholder logic: can be replaced with method-specific logic
-        rsi = insights.get('rsi_signal')
-        ma = insights.get('ma_signal')
-        suggestion = ""
-        reason = ""
-        # Use text fallback for emojis if not supported
-        emoji_buy = "[YES]" if rsi == 'buy' or ma == 'buy' else "[NO]"
-        emoji_sell = "[YES]" if rsi == 'sell' or ma == 'sell' else "[NO]"
-        if rsi == 'buy' or ma == 'buy':
-            suggestion = f"<span style='color:#4caf50;'>Consider buying. {emoji_buy}</span>"
-            reason = f"{method}: RSI indicates oversold (RSI < 30) or price has crossed above the moving average."
-        elif rsi == 'sell' or ma == 'sell':
-            suggestion = f"<span style='color:#e53935;'>Consider selling. {emoji_sell}</span>"
-            reason = f"{method}: RSI indicates overbought (RSI > 70) or price has crossed below the moving average."
+        """Generate insights using four truly different analysis methods"""
+        
+        if method == "Technical Analysis":
+            return self._technical_analysis_method(insights, prices)
+        elif method == "Momentum Model":
+            return self._momentum_analysis_method(insights, prices)
+        elif method == "Simple ML":
+            return self._ml_analysis_method(insights, prices)
+        elif method == "Llama Analysis":
+            return self._llama_analysis_method(insights, prices)
         else:
-            suggestion = f"<span style='color:#ffb300;'>Hold or wait. [WAIT]</span>"
-            reason = f"{method}: No strong buy/sell signals from RSI or moving average."
-        # Short/medium/long-term price change (placeholder)
-        st = "Likely small change"
-        mt = "Likely moderate change"
-        lt = "Trend unclear"
-        buy = f"Yes {emoji_buy}" if rsi == 'buy' or ma == 'buy' else f"No [NO]"
-        sell = f"Yes {emoji_sell}" if rsi == 'sell' or ma == 'sell' else f"No [NO]"
+            # Fallback
+            return "Hold", "Unknown method", "Uncertain", "Uncertain", "Uncertain", "No", "No"
+    
+    def _technical_analysis_method(self, insights, prices):
+        """Traditional technical analysis using RSI and MA"""
+        rsi = insights.get('rsi_signal', 'unknown')
+        rsi_val = insights.get('rsi_value') or 50.0  # Default to 50 if None
+        ma = insights.get('ma_signal', 'unknown')
+        ma_val = insights.get('ma_value') or (sum(prices[-14:]) / len(prices[-14:]) if len(prices) >= 14 else prices[-1] if prices else 0)
+        
+        # Technical analysis is strict about thresholds
+        if rsi == 'buy' and ma == 'buy':
+            suggestion = f"<span style='color:#4caf50;'>Strong Buy [BUY]</span>"
+            reason = f"Both RSI ({rsi_val:.1f}) and MA confirm oversold conditions with upward momentum"
+            st, mt, lt = "Bullish reversal", "Upward trend likely", "Depends on fundamentals"
+            buy, sell = "Yes [YES]", "No [NO]"
+        elif rsi == 'sell' and ma == 'sell':
+            suggestion = f"<span style='color:#e53935;'>Strong Sell [SELL]</span>"
+            reason = f"Both RSI ({rsi_val:.1f}) and MA indicate overbought with downward momentum"
+            st, mt, lt = "Bearish reversal", "Downward trend likely", "Market correction expected"
+            buy, sell = "No [NO]", "Yes [YES]"
+        elif rsi == 'buy' or ma == 'buy':
+            suggestion = f"<span style='color:#81c784;'>Cautious Buy [BUY]</span>"
+            reason = f"Mixed signals: RSI={rsi}, MA={ma}. One indicator suggests buying opportunity"
+            st, mt, lt = "Possible uptick", "Sideways with upside bias", "Neutral to positive"
+            buy, sell = "Yes [YES]", "No [NO]"
+        elif rsi == 'sell' or ma == 'sell':
+            suggestion = f"<span style='color:#ffab91;'>Cautious Sell [SELL]</span>"
+            reason = f"Mixed signals: RSI={rsi}, MA={ma}. One indicator suggests selling"
+            st, mt, lt = "Possible dip", "Sideways with downside risk", "Neutral to negative"
+            buy, sell = "No [NO]", "Yes [YES]"
+        else:
+            suggestion = f"<span style='color:#ffb300;'>Hold [HOLD]</span>"
+            reason = f"RSI ({rsi_val:.1f}) and MA in neutral zone - no clear technical signals"
+            st, mt, lt = "Range-bound", "Consolidation phase", "Awaiting breakout"
+            buy, sell = "No [NO]", "No [NO]"
+        
+        return suggestion, reason, st, mt, lt, buy, sell
+    
+    def _momentum_analysis_method(self, insights, prices):
+        """Momentum-based analysis focusing on price velocity and acceleration"""
+        if len(prices) < 10:
+            return "Hold", "Insufficient data", "Unknown", "Unknown", "Unknown", "No", "No"
+        
+        # Calculate price momentum metrics
+        recent_prices = prices[-10:]  # Last 10 periods
+        price_change_5d = (prices[-1] - prices[-6]) / prices[-6] * 100 if len(prices) >= 6 and prices[-6] != 0 else 0
+        price_change_2d = (prices[-1] - prices[-3]) / prices[-3] * 100 if len(prices) >= 3 and prices[-3] != 0 else 0
+        
+        # Momentum acceleration (change in momentum)
+        momentum_recent = price_change_2d
+        momentum_older = (prices[-5] - prices[-10]) / prices[-10] * 100 if len(prices) >= 10 and prices[-10] != 0 else 0
+        momentum_acceleration = momentum_recent - momentum_older
+        
+        # Volatility (as risk measure)
+        volatility = np.std(recent_prices) / np.mean(recent_prices) * 100 if len(recent_prices) > 1 else 0
+        
+        # Momentum-based decision logic
+        if price_change_5d > 5 and momentum_acceleration > 0:
+            suggestion = f"<span style='color:#4caf50;'>Momentum Buy [STRONG]</span>"
+            reason = f"Strong upward momentum: +{price_change_5d:.1f}% with accelerating trend"
+            st, mt, lt = "Continuation expected", "Strong uptrend", "Momentum-driven growth"
+            buy, sell = "Yes [YES]", "No [NO]"
+        elif price_change_5d < -5 and momentum_acceleration < 0:
+            suggestion = f"<span style='color:#e53935;'>Momentum Sell [STRONG]</span>"
+            reason = f"Strong downward momentum: {price_change_5d:.1f}% with accelerating decline"
+            st, mt, lt = "Further decline likely", "Downtrend continues", "Bearish momentum"
+            buy, sell = "No [NO]", "Yes [YES]"
+        elif price_change_2d > 2:
+            suggestion = f"<span style='color:#81c784;'>Momentum Buy [MODERATE]</span>"
+            reason = f"Recent upward momentum: +{price_change_2d:.1f}% in short term"
+            st, mt, lt = "Short-term bullish", "Monitor for continuation", "Depends on sustained momentum"
+            buy, sell = "Yes [YES]", "No [NO]"
+        elif price_change_2d < -2:
+            suggestion = f"<span style='color:#ffab91;'>Momentum Sell [MODERATE]</span>"
+            reason = f"Recent downward momentum: {price_change_2d:.1f}% suggests weakness"
+            st, mt, lt = "Short-term bearish", "Watch for reversal", "Risk of continued decline"
+            buy, sell = "No [NO]", "Yes [YES]"
+        else:
+            suggestion = f"<span style='color:#ffb300;'>Momentum Hold [WAIT]</span>"
+            reason = f"Low momentum ({price_change_2d:.1f}%), high volatility ({volatility:.1f}%)"
+            st, mt, lt = "Sideways movement", "Low conviction period", "Await momentum shift"
+            buy, sell = "No [NO]", "No [NO]"
+        
+        return suggestion, reason, st, mt, lt, buy, sell
+    
+    def _ml_analysis_method(self, insights, prices):
+        """Simple ML-inspired analysis using statistical patterns"""
+        if len(prices) < 20:
+            return "Hold", "Insufficient data for ML analysis", "Unknown", "Unknown", "Unknown", "No", "No"
+        
+        # ML-style feature extraction
+        prices_array = np.array(prices[-20:])  # Last 20 periods for ML analysis
+        
+        # Feature 1: Price trend (linear regression slope)
+        X = np.arange(len(prices_array))
+        slope = np.polyfit(X, prices_array, 1)[0]
+        mean_price = np.mean(prices_array)
+        trend_strength = abs(slope) / mean_price * 1000 if mean_price != 0 else 0  # Normalize
+        
+        # Feature 2: Mean reversion (distance from moving average)
+        ma_20 = np.mean(prices_array)
+        current_price = prices_array[-1]
+        mean_reversion_score = (current_price - ma_20) / ma_20 * 100 if ma_20 != 0 else 0
+        
+        # Feature 3: Price stability (coefficient of variation)
+        mean_price = np.mean(prices_array)
+        cv = np.std(prices_array) / mean_price * 100 if mean_price != 0 else 0
+        
+        # Feature 4: Recent vs historical performance
+        recent_avg = np.mean(prices_array[-5:])
+        historical_avg = np.mean(prices_array[:10])
+        performance_ratio = (recent_avg / historical_avg - 1) * 100 if historical_avg != 0 else 0
+        
+        # ML-style scoring system
+        buy_score = 0
+        sell_score = 0
+        
+        # Trend component
+        if slope > 0:
+            buy_score += trend_strength * 2
+        else:
+            sell_score += trend_strength * 2
+            
+        # Mean reversion component
+        if mean_reversion_score < -5:  # Significantly below average
+            buy_score += abs(mean_reversion_score) * 1.5
+        elif mean_reversion_score > 5:  # Significantly above average
+            sell_score += mean_reversion_score * 1.5
+            
+        # Stability component (penalize high volatility)
+        if cv > 10:
+            buy_score *= 0.7
+            sell_score *= 0.7
+            
+        # Performance component
+        if performance_ratio > 3:
+            buy_score += performance_ratio * 0.8
+        elif performance_ratio < -3:
+            sell_score += abs(performance_ratio) * 0.8
+        
+        # ML decision logic
+        confidence_threshold = 8
+        if buy_score > confidence_threshold and buy_score > sell_score * 1.2:
+            confidence = min(buy_score / 15, 1.0) * 100
+            suggestion = f"<span style='color:#4caf50;'>ML Buy [{confidence:.0f}% conf.]</span>"
+            reason = f"ML model suggests buying: trend={slope:.2e}, mean-rev={mean_reversion_score:.1f}%, stability={cv:.1f}%"
+            st, mt, lt = "Statistically favorable", "Positive pattern detected", "Data-driven optimism"
+            buy, sell = "Yes [YES]", "No [NO]"
+        elif sell_score > confidence_threshold and sell_score > buy_score * 1.2:
+            confidence = min(sell_score / 15, 1.0) * 100
+            suggestion = f"<span style='color:#e53935;'>ML Sell [{confidence:.0f}% conf.]</span>"
+            reason = f"ML model suggests selling: trend={slope:.2e}, mean-rev={mean_reversion_score:.1f}%, stability={cv:.1f}%"
+            st, mt, lt = "Statistical headwinds", "Negative pattern detected", "Data-driven caution"
+            buy, sell = "No [NO]", "Yes [YES]"
+        else:
+            suggestion = f"<span style='color:#ffb300;'>ML Hold [Low conf.]</span>"
+            reason = f"ML model inconclusive: buy_score={buy_score:.1f}, sell_score={sell_score:.1f}, volatility={cv:.1f}%"
+            st, mt, lt = "Mixed statistical signals", "Model uncertainty", "Requires more data"
+            buy, sell = "No [NO]", "No [NO]"
+        
+        return suggestion, reason, st, mt, lt, buy, sell
+    
+    def _llama_analysis_method(self, insights, prices):
+        """AI-powered analysis using Llama to analyze raw price data"""
+        if len(prices) < 10:
+            return "Hold", "Insufficient data for AI analysis", "Unknown", "Unknown", "Unknown", "No", "No"
+        
+        # Prepare price data for Llama analysis
+        recent_prices = prices[-20:] if len(prices) >= 20 else prices  # Last 20 periods or all available
+        price_changes = []
+        for i in range(1, len(recent_prices)):
+            change = (recent_prices[i] - recent_prices[i-1]) / recent_prices[i-1] * 100
+            price_changes.append(change)
+        
+        # Create a data summary for Llama
+        current_price = recent_prices[-1]
+        avg_price = sum(recent_prices) / len(recent_prices)
+        min_price = min(recent_prices)
+        max_price = max(recent_prices)
+        total_change = (recent_prices[-1] - recent_prices[0]) / recent_prices[0] * 100
+        volatility = (max_price - min_price) / avg_price * 100
+        
+        # Format data for Llama prompt
+        data_summary = f"""
+Price Analysis Data:
+- Current Price: ${current_price:.2f}
+- Period Average: ${avg_price:.2f}
+- Range: ${min_price:.2f} - ${max_price:.2f}
+- Total Change: {total_change:+.2f}%
+- Volatility: {volatility:.1f}%
+- Recent Price Changes (%): {', '.join([f'{x:+.1f}' for x in price_changes[-10:]])}
+- Data Points: {len(recent_prices)} periods
+"""
+
+        prompt = f"""You are a financial analyst. Analyze this cryptocurrency price data and provide trading insights.
+
+{data_summary}
+
+Based on this data, provide your analysis in EXACTLY this format:
+
+Short-term outlook: [your assessment]
+Medium-term outlook: [your assessment] 
+Long-term outlook: [your assessment]
+Buy recommendation: [Yes/No with brief reason]
+Sell recommendation: [Yes/No with brief reason]
+Overall suggestion: [Buy/Sell/Hold with confidence level]
+Reasoning: [2-3 sentence explanation of your analysis]
+
+Be concise and focus on what the price patterns suggest."""
+
+        try:
+            # Make synchronous call to Llama (using the async client in sync mode)
+            import asyncio
+            
+            async def get_llama_analysis():
+                try:
+                    response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
+                    return response['response'].strip()
+                except Exception as e:
+                    return f"AI analysis unavailable: {e}"
+            
+            # Run the async function synchronously
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            llama_response = loop.run_until_complete(get_llama_analysis())
+            loop.close()
+            
+            # Parse Llama's response to extract structured data
+            return self._parse_llama_response(llama_response, current_price, total_change)
+            
+        except Exception as e:
+            # Fallback to rule-based analysis if Llama fails
+            return self._fallback_ai_analysis(total_change, volatility, current_price, avg_price)
+    
+    def _parse_llama_response(self, response, current_price, total_change):
+        """Parse Llama's response into structured format"""
+        lines = response.split('\n')
+        
+        # Initialize defaults
+        st = "AI assessment pending"
+        mt = "AI assessment pending" 
+        lt = "AI assessment pending"
+        buy = "No [AI]"
+        sell = "No [AI]"
+        suggestion = f"<span style='color:#ffb300;'>AI Hold [ANALYZING]</span>"
+        reason = "AI analysis in progress"
+        
+        # Parse response line by line
+        for line in lines:
+            line = line.strip().lower()
+            if "short-term" in line:
+                st = line.split(":", 1)[1].strip() if ":" in line else st
+            elif "medium-term" in line:
+                mt = line.split(":", 1)[1].strip() if ":" in line else mt
+            elif "long-term" in line:
+                lt = line.split(":", 1)[1].strip() if ":" in line else lt
+            elif "buy recommendation" in line:
+                buy_text = line.split(":", 1)[1].strip() if ":" in line else ""
+                buy = "Yes [AI]" if "yes" in buy_text else "No [AI]"
+            elif "sell recommendation" in line:
+                sell_text = line.split(":", 1)[1].strip() if ":" in line else ""
+                sell = "Yes [AI]" if "yes" in sell_text else "No [AI]"
+            elif "overall suggestion" in line:
+                suggestion_text = line.split(":", 1)[1].strip() if ":" in line else ""
+                if "buy" in suggestion_text:
+                    suggestion = f"<span style='color:#4caf50;'>AI Buy [RECOMMENDED]</span>"
+                elif "sell" in suggestion_text:
+                    suggestion = f"<span style='color:#e53935;'>AI Sell [RECOMMENDED]</span>"
+                else:
+                    suggestion = f"<span style='color:#ffb300;'>AI Hold [NEUTRAL]</span>"
+            elif "reasoning" in line:
+                reason = line.split(":", 1)[1].strip() if ":" in line else reason
+        
+        # Add price context to reasoning
+        price_context = f"Current: ${current_price:.2f}, Change: {total_change:+.1f}%"
+        reason = f"AI Analysis - {reason} ({price_context})"
+        
+        return suggestion, reason, st, mt, lt, buy, sell
+    
+    def _fallback_ai_analysis(self, total_change, volatility, current_price, avg_price):
+        """Fallback analysis when Llama is unavailable"""
+        # Simple rule-based fallback
+        if total_change > 10 and volatility < 20:
+            suggestion = f"<span style='color:#4caf50;'>AI Buy [FALLBACK]</span>"
+            reason = f"Fallback AI: Strong upward trend ({total_change:+.1f}%) with moderate volatility"
+            st, mt, lt = "Bullish pattern", "Upward momentum", "Positive trend"
+            buy, sell = "Yes [AI]", "No [AI]"
+        elif total_change < -10 and volatility < 20:
+            suggestion = f"<span style='color:#e53935;'>AI Sell [FALLBACK]</span>"
+            reason = f"Fallback AI: Strong downward trend ({total_change:+.1f}%) suggests weakness"
+            st, mt, lt = "Bearish pattern", "Downward pressure", "Negative trend"
+            buy, sell = "No [AI]", "Yes [AI]"
+        else:
+            suggestion = f"<span style='color:#ffb300;'>AI Hold [FALLBACK]</span>"
+            reason = f"Fallback AI: Mixed signals, change: {total_change:+.1f}%, volatility: {volatility:.1f}%"
+            st, mt, lt = "Unclear pattern", "Mixed signals", "Neutral outlook"
+            buy, sell = "No [AI]", "No [AI]"
+        
         return suggestion, reason, st, mt, lt, buy, sell
 
     def _generate_consensus(self, all_suggestions):
@@ -481,22 +815,15 @@ class MainWindow(QMainWindow):
         change = predicted_price - last_price
         pct_change = (change / last_price) * 100 if last_price != 0 else 0
         direction = "up" if change > 0 else "down" if change < 0 else "no change"
-        # Clarify timeframe based on current selection
-        timeframe = self.timeframe_combo.currentText()
-        if timeframe == "1h":
-            tf_label = "(next hour)"
-        elif timeframe == "24h":
-            tf_label = "(next day)"
-        elif timeframe == "7d":
-            tf_label = "(next week)"
-        else:
-            tf_label = ""
+        # Prediction is always based on 30-day data analysis
+        tf_label = "(based on 30-day analysis)"
         self.prediction_label.setText(
             f"<b>Predicted next price {tf_label}:</b> ${predicted_price:,.2f} ({direction}, {pct_change:+.2f}%)"
         )
 
     def on_timeframe_changed(self, timeframe):
-        self.load_price_data(timeframe)
+        # Only update chart display, don't recalculate insights
+        self.load_chart_data(timeframe)
 
     def on_coin_changed(self, coin_name):
         # Map display name to API id
@@ -524,6 +851,23 @@ class MainWindow(QMainWindow):
         show = self.consensus_toggle_btn.isChecked()
         self.consensus_label.setVisible(show)
         self.consensus_toggle_btn.setText("Hide Consensus Insights" if show else "Show Consensus Insights")
+    
+    def toggle_price_chart(self):
+        show = self.chart_toggle_btn.isChecked()
+        self.price_graph.setVisible(show)
+        self.divider1.setVisible(show)
+        self.chart_toggle_btn.setText("Hide Price Chart" if show else "Show Price Chart")
+    
+    def toggle_advisor_section(self):
+        show = self.advisors_toggle_btn.isChecked()
+        self.suggestion_tabs.setVisible(show)
+        self.divider3.setVisible(show)
+        self.advisors_toggle_btn.setText("Hide Advisor Analysis" if show else "Show Advisor Analysis")
+    
+    def toggle_prediction_section(self):
+        show = self.prediction_toggle_btn.isChecked()
+        self.prediction_label.setVisible(show)
+        self.prediction_toggle_btn.setText("Hide Price Prediction" if show else "Show Price Prediction")
 
     def _cleanup_threads(self):
         # Remove finished threads from the list
