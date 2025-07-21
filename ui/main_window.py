@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
@@ -140,15 +140,17 @@ class MainWindow(QMainWindow):
             vline.setFrameShape(QFrame.VLine)
             vline.setFrameShadow(QFrame.Sunken)
             vline.setStyleSheet("color: #888; background: #888; width: 2px;")
-            # Right (LLM output)
-            right_label = QLabel("<i>Loading advisor explanation...</i>")
-            right_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            right_label.setWordWrap(True)
-            right_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
-            right_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            # Right (LLM output, markdown rendered)
+            right_browser = QTextBrowser()
+            right_browser.setOpenExternalLinks(True)
+            right_browser.setReadOnly(True)
+            right_browser.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px; background: transparent; border: none;")
+            right_browser.setMaximumHeight(220)
+            right_browser.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            right_browser.setMarkdown("<i>Loading advisor explanation...</i>")
             right_scroll = QScrollArea()
             right_scroll.setWidgetResizable(True)
-            right_scroll.setWidget(right_label)
+            right_scroll.setWidget(right_browser)
             right_scroll.setMaximumHeight(220)
             right_scroll.setStyleSheet("background: transparent; border: none;")
             hbox.addWidget(left_scroll, 2)
@@ -157,7 +159,7 @@ class MainWindow(QMainWindow):
             tab.layout.addLayout(hbox)
             self.suggestion_tabs.addTab(tab, label)
             self.suggestion_widgets.append(left_label)
-            self.llm_widgets.append(right_label)
+            self.llm_widgets.append(right_browser)
         self.suggestion_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.layout.addWidget(self.suggestion_tabs)
 
@@ -243,7 +245,7 @@ class MainWindow(QMainWindow):
                 f"<b>Reasoning:</b> {reason}"
             )
             self.suggestion_widgets[i].setText(left_text)
-            self.llm_widgets[i].setText("<i>Loading advisor explanation...</i>")
+            self.llm_widgets[i].setMarkdown("<i>Loading advisor explanation...</i>")
             all_suggestions.append({
                 'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 'suggestion': suggestion,
                 'reason': reason, 'advisor': advisor_names[i], 'method': method
@@ -272,14 +274,16 @@ class MainWindow(QMainWindow):
         consensus_str = consensus_left.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
         self.consensus_llm_label = getattr(self, 'consensus_llm_label', None)
         if not self.consensus_llm_label:
-            self.consensus_llm_label = QLabel("<i>Loading consensus explanation...</i>")
-            self.consensus_llm_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            self.consensus_llm_label.setWordWrap(True)
-            self.consensus_llm_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
+            self.consensus_llm_label = QTextBrowser()
+            self.consensus_llm_label.setOpenExternalLinks(True)
+            self.consensus_llm_label.setReadOnly(True)
+            self.consensus_llm_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px; background: transparent; border: none;")
+            self.consensus_llm_label.setMaximumHeight(220)
             self.consensus_llm_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.consensus_llm_label.setMarkdown("<i>Loading consensus explanation...</i>")
             self.layout.insertWidget(self.layout.indexOf(self.consensus_label) + 1, self.consensus_llm_label)
         else:
-            self.consensus_llm_label.setText("<i>Loading consensus explanation...</i>")
+            self.consensus_llm_label.setMarkdown("<i>Loading consensus explanation...</i>")
         worker = ConsensusLLMWorker(consensus_str)
         worker.result_ready.connect(self.update_llm_consensus)
         worker.finished.connect(lambda: self._cleanup_threads())
@@ -368,10 +372,10 @@ class MainWindow(QMainWindow):
         self.load_price_data(timeframe)
 
     def update_llm_tab(self, idx, text):
-        self.llm_widgets[idx].setText(text)
+        self.llm_widgets[idx].setMarkdown(text)
 
     def update_llm_consensus(self, text):
-        self.consensus_llm_label.setText(text)
+        self.consensus_llm_label.setMarkdown(text)
 
     def _cleanup_threads(self):
         # Remove finished threads from the list
