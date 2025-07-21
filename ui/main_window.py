@@ -4,6 +4,8 @@ from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
 from data.fetch_prices import get_prices_for_timeframe
 from analysis.insights import get_trading_insights
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -46,6 +48,18 @@ class MainWindow(QMainWindow):
         self.insights_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.insights_label)
 
+        # Suggestion section
+        self.suggestion_label = QLabel("[Suggestion Placeholder]", self)
+        self.suggestion_label.setAlignment(Qt.AlignCenter)
+        self.suggestion_label.setWordWrap(True)
+        self.layout.addWidget(self.suggestion_label)
+
+        # Prediction section
+        self.prediction_label = QLabel("[Prediction Placeholder]", self)
+        self.prediction_label.setAlignment(Qt.AlignCenter)
+        self.prediction_label.setWordWrap(True)
+        self.layout.addWidget(self.prediction_label)
+
         set_dark_theme(self)
         self.load_price_data("24h")
 
@@ -68,6 +82,8 @@ class MainWindow(QMainWindow):
         prices = [price for _, price in data]
         insights = get_trading_insights(prices)
         self.display_insights(insights)
+        self.display_suggestion(insights)
+        self.display_prediction(prices)
 
     def display_insights(self, insights):
         if not insights or insights['high'] is None or insights['low'] is None:
@@ -80,6 +96,47 @@ class MainWindow(QMainWindow):
             f"<b>MA:</b> {insights['ma_value']:.2f} ({insights['ma_signal'].capitalize()})"
         )
         self.insights_label.setText(text)
+
+    def display_suggestion(self, insights):
+        if not insights:
+            self.suggestion_label.setText("")
+            return
+        # Generate plain English suggestion and reasoning
+        rsi = insights.get('rsi_signal')
+        ma = insights.get('ma_signal')
+        rsi_val = insights.get('rsi_value')
+        ma_val = insights.get('ma_value')
+        suggestion = ""
+        reason = ""
+        if rsi == 'buy' or ma == 'buy':
+            suggestion = "Consider buying."
+            reason = "RSI indicates oversold (RSI < 30) or price has crossed above the moving average."
+        elif rsi == 'sell' or ma == 'sell':
+            suggestion = "Consider selling."
+            reason = "RSI indicates overbought (RSI > 70) or price has crossed below the moving average."
+        else:
+            suggestion = "Hold or wait."
+            reason = "No strong buy/sell signals from RSI or moving average."
+        self.suggestion_label.setText(f"<b>Suggestion:</b> {suggestion}<br><b>Reasoning:</b> {reason}")
+
+    def display_prediction(self, prices):
+        if not prices or len(prices) < 2:
+            self.prediction_label.setText("")
+            return
+        # Use simple linear regression to predict next price
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = np.array(prices)
+        model = LinearRegression()
+        model.fit(X, y)
+        next_idx = np.array([[len(prices)]])
+        predicted_price = model.predict(next_idx)[0]
+        last_price = prices[-1]
+        change = predicted_price - last_price
+        pct_change = (change / last_price) * 100 if last_price != 0 else 0
+        direction = "up" if change > 0 else "down" if change < 0 else "no change"
+        self.prediction_label.setText(
+            f"<b>Predicted next price:</b> ${predicted_price:,.2f} ({direction}, {pct_change:+.2f}%)"
+        )
 
     def on_timeframe_changed(self, timeframe):
         self.load_price_data(timeframe)

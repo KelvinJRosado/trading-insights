@@ -65,6 +65,7 @@ class PriceGraphWidget(QWidget):
             self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
             self.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
             self.figure.autofmt_xdate()
+        self.ax.grid(True)
         self.canvas.draw()
 
     def _on_hover(self, event):
