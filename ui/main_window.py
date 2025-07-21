@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         self.layout.addLayout(timeframe_layout)
 
         # Price graph widget
-        self.price_graph = PriceGraphWidget(self, dark_mode=True)
+        self.price_graph = PriceGraphWidget(self, dark_mode=False)
         self.layout.addWidget(self.price_graph)
 
         # Divider below graph
@@ -211,7 +211,7 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.prediction_label)
 
         # Set background color for main window
-        self.central_widget.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #232b36, stop:1 #1e1e1e);")
+        self.central_widget.setStyleSheet("background: #faf9f6;")
 
         set_light_theme(self)
         self.load_price_data("24h")
