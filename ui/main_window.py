@@ -28,8 +28,8 @@ class MainWindow(QMainWindow):
         self.dark_action.triggered.connect(self.set_dark_mode)
         self.light_action.triggered.connect(self.set_light_mode)
 
-        # Add top spacer
-        self.layout.addItem(QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
+        # Add top spacer (larger)
+        self.layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Fixed))
 
         # Timeframe selector
         timeframe_layout = QHBoxLayout()
@@ -57,6 +57,7 @@ class MainWindow(QMainWindow):
         # Trading insights section
         self.insights_label = QLabel("[Trading Insights Placeholder]", self)
         self.insights_label.setAlignment(Qt.AlignCenter)
+        self.insights_label.setObjectName("insightsLabel")
         self.layout.addWidget(self.insights_label)
 
         # Divider below insights
@@ -99,13 +100,14 @@ class MainWindow(QMainWindow):
         self.consensus_label = QLabel("[Consensus Placeholder]", self)
         self.consensus_label.setAlignment(Qt.AlignCenter)
         self.consensus_label.setWordWrap(True)
-        self.consensus_label.setStyleSheet("font-size: 15px; font-weight: bold; padding: 12px; background: #232b36; border-radius: 8px; color: #fff;")
+        self.consensus_label.setObjectName("consensusLabel")
         self.layout.addWidget(self.consensus_label)
 
         # Prediction section
         self.prediction_label = QLabel("[Prediction Placeholder]", self)
         self.prediction_label.setAlignment(Qt.AlignCenter)
         self.prediction_label.setWordWrap(True)
+        self.prediction_label.setObjectName("predictionLabel")
         self.layout.addWidget(self.prediction_label)
 
         # Set background color for main window
@@ -140,11 +142,13 @@ class MainWindow(QMainWindow):
         if not insights or insights['high'] is None or insights['low'] is None:
             self.insights_label.setText("No trading insights available.")
             return
+        # Add tooltips for each metric
+        high = f'<span title="Highest price in the selected timeframe">High: {insights["high"]:.2f}</span>'
+        low = f'<span title="Lowest price in the selected timeframe">Low: {insights["low"]:.2f}</span>'
+        rsi = f'<span title="Relative Strength Index (momentum indicator, <30=oversold, >70=overbought)">RSI: {insights["rsi_value"]:.2f} ({insights["rsi_signal"].capitalize()})</span>'
+        ma = f'<span title="Moving Average (average price over a window)">MA: {insights["ma_value"]:.2f} ({insights["ma_signal"].capitalize()})</span>'
         text = (
-            f"<b>High:</b> {insights['high']:.2f} &nbsp; "
-            f"<b>Low:</b> {insights['low']:.2f} &nbsp; "
-            f"<b>RSI:</b> {insights['rsi_value']:.2f} ({insights['rsi_signal'].capitalize()}) &nbsp; "
-            f"<b>MA:</b> {insights['ma_value']:.2f} ({insights['ma_signal'].capitalize()})"
+            f"{high} &nbsp; {low} &nbsp; {rsi} &nbsp; {ma}"
         )
         self.insights_label.setText(text)
 
@@ -156,15 +160,32 @@ class MainWindow(QMainWindow):
         for i, method in enumerate(methods):
             # Placeholder: use the same insights for all
             suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
-            self.suggestion_widgets[i].setText(
-                f"<b>Short-term:</b> {st}<br>"
-                f"<b>Medium-term:</b> {mt}<br>"
-                f"<b>Long-term:</b> {lt}<br>"
-                f"<b>Buy now:</b> {buy}<br>"
-                f"<b>Sell now:</b> {sell}<br>"
-                f"<b>Suggestion:</b> {suggestion}<br>"
-                f"<b>Reasoning:</b> {reason}"
-            )
+            # Add vertical separator and placeholder in tab content
+            tab = self.suggestion_tabs.widget(i)
+            # Remove old layout widgets if any
+            while tab.layout.count() > 0:
+                item = tab.layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
+            hbox = QHBoxLayout()
+            left = QLabel(self.suggestion_widgets[i].text())
+            left.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            left.setWordWrap(True)
+            left.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
+            vline = QFrame()
+            vline.setFrameShape(QFrame.VLine)
+            vline.setFrameShadow(QFrame.Sunken)
+            vline.setStyleSheet("color: #888; background: #888; width: 2px;")
+            right = QLabel("<i>Future content here</i>")
+            right.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            right.setWordWrap(True)
+            right.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
+            hbox.addWidget(left, 2)
+            hbox.addWidget(vline)
+            hbox.addWidget(right, 1)
+            tab.layout.addLayout(hbox)
+            self.suggestion_widgets[i] = left
             all_suggestions.append({
                 'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 'suggestion': suggestion
             })
@@ -186,8 +207,9 @@ class MainWindow(QMainWindow):
         ma = insights.get('ma_signal')
         suggestion = ""
         reason = ""
-        emoji_buy = "✅" if rsi == 'buy' or ma == 'buy' else "❌"
-        emoji_sell = "✅" if rsi == 'sell' or ma == 'sell' else "❌"
+        # Use text fallback for emojis if not supported
+        emoji_buy = "[YES]" if rsi == 'buy' or ma == 'buy' else "[NO]"
+        emoji_sell = "[YES]" if rsi == 'sell' or ma == 'sell' else "[NO]"
         if rsi == 'buy' or ma == 'buy':
             suggestion = f"<span style='color:#4caf50;'>Consider buying. {emoji_buy}</span>"
             reason = f"{method}: RSI indicates oversold (RSI < 30) or price has crossed above the moving average."
@@ -195,14 +217,14 @@ class MainWindow(QMainWindow):
             suggestion = f"<span style='color:#e53935;'>Consider selling. {emoji_sell}</span>"
             reason = f"{method}: RSI indicates overbought (RSI > 70) or price has crossed below the moving average."
         else:
-            suggestion = f"<span style='color:#ffb300;'>Hold or wait. ⚠️</span>"
+            suggestion = f"<span style='color:#ffb300;'>Hold or wait. [WAIT]</span>"
             reason = f"{method}: No strong buy/sell signals from RSI or moving average."
         # Short/medium/long-term price change (placeholder)
         st = "Likely small change"
         mt = "Likely moderate change"
         lt = "Trend unclear"
-        buy = f"Yes {emoji_buy}" if rsi == 'buy' or ma == 'buy' else f"No ❌"
-        sell = f"Yes {emoji_sell}" if rsi == 'sell' or ma == 'sell' else f"No ❌"
+        buy = f"Yes {emoji_buy}" if rsi == 'buy' or ma == 'buy' else f"No [NO]"
+        sell = f"Yes {emoji_sell}" if rsi == 'sell' or ma == 'sell' else f"No [NO]"
         return suggestion, reason, st, mt, lt, buy, sell
 
     def _generate_consensus(self, all_suggestions):
@@ -217,14 +239,14 @@ class MainWindow(QMainWindow):
             'sell': most_common([s['sell'] for s in all_suggestions]),
             'suggestion': most_common([s['suggestion'] for s in all_suggestions]),
         }
-        # Add emoji and color to consensus suggestion
+        # Add text fallback for consensus suggestion
         suggestion = consensus['suggestion']
         if 'buy' in suggestion.lower():
-            suggestion = f"<span style='color:#4caf50;'>Consider buying. ✅</span>"
+            suggestion = f"<span style='color:#4caf50;'>Consider buying. [YES]</span>"
         elif 'sell' in suggestion.lower():
-            suggestion = f"<span style='color:#e53935;'>Consider selling. ❌</span>"
+            suggestion = f"<span style='color:#e53935;'>Consider selling. [NO]</span>"
         else:
-            suggestion = f"<span style='color:#ffb300;'>Hold or wait. ⚠️</span>"
+            suggestion = f"<span style='color:#ffb300;'>Hold or wait. [WAIT]</span>"
         consensus['suggestion'] = suggestion
         return consensus
 

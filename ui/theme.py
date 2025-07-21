@@ -17,7 +17,18 @@ def set_dark_theme(window):
     palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
     palette.setColor(QPalette.HighlightedText, Qt.black)
     window.setPalette(palette)
-    window.setStyleSheet("QWidget { background-color: #1e1e1e; color: #ffffff; } QMenuBar { background-color: #232323; color: #ffffff; } QMenu { background-color: #232323; color: #ffffff; }")
+    # Style all widgets for dark mode
+    font_family = "'Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', 'sans-serif'"
+    window.centralWidget().setStyleSheet(f"""
+        QWidget {{ background: #232b36; color: #fff; font-family: {font_family}; }}
+        QTabWidget::pane {{ border: none; background: #232b36; }}
+        QTabBar::tab {{ background: #232b36; color: #fff; min-width: 33%; padding: 10px; font-weight: bold; border: 1px solid #444; border-bottom: none; border-radius: 6px 6px 0 0; }}
+        QTabBar::tab:selected {{ background: #2d3a4a; color: #fff; }}
+        QTabBar::tab:!selected {{ background: #232b36; color: #bbb; }}
+        QFrame[frameShape="4"] {{ background: #888; height: 2px; }}
+        QLabel#consensusLabel {{ font-size: 15px; font-weight: bold; padding: 12px; background: #232b36; border-radius: 8px; color: #fff; }}
+        QLabel#insightsLabel, QLabel#predictionLabel {{ color: #fff; }}
+    """)
 
 def set_light_theme(window):
     palette = QPalette()
@@ -35,4 +46,15 @@ def set_light_theme(window):
     palette.setColor(QPalette.Highlight, QColor(0, 122, 204))
     palette.setColor(QPalette.HighlightedText, Qt.white)
     window.setPalette(palette)
-    window.setStyleSheet("QWidget { background-color: #ffffff; color: #000000; } QMenuBar { background-color: #f5f5f5; color: #000000; } QMenu { background-color: #f5f5f5; color: #000000; }")
+    # Style all widgets for light mode
+    font_family = "'Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', 'sans-serif'"
+    window.centralWidget().setStyleSheet(f"""
+        QWidget {{ background: #f5f7fa; color: #222; font-family: {font_family}; }}
+        QTabWidget::pane {{ border: none; background: #f5f7fa; }}
+        QTabBar::tab {{ background: #e0e4ea; color: #222; min-width: 33%; padding: 10px; font-weight: bold; border: 1px solid #bbb; border-bottom: none; border-radius: 6px 6px 0 0; }}
+        QTabBar::tab:selected {{ background: #fff; color: #222; }}
+        QTabBar::tab:!selected {{ background: #e0e4ea; color: #888; }}
+        QFrame[frameShape="4"] {{ background: #bbb; height: 2px; }}
+        QLabel#consensusLabel {{ font-size: 15px; font-weight: bold; padding: 12px; background: #e0e4ea; border-radius: 8px; color: #222; }}
+        QLabel#insightsLabel, QLabel#predictionLabel {{ color: #222; }}
+    """)
