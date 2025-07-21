@@ -145,7 +145,26 @@ class MainWindow(QMainWindow):
         self.suggestion_tabs.setMovable(False)
         self.suggestion_tabs.setUsesScrollButtons(False)
         self.suggestion_tabs.setDocumentMode(True)
-        self.suggestion_tabs.setStyleSheet("QTabBar::tab { min-width: 33%; min-height: 40px; font-size: 16px; padding: 10px; font-weight: bold; } QTabWidget::pane { border: none; }")
+        self.suggestion_tabs.setTabBarAutoHide(False)
+        self.suggestion_tabs.setStyleSheet("""
+            QTabBar::tab {
+                min-width: 220px;
+                min-height: 44px;
+                font-size: 18px;
+                padding: 12px 24px;
+                font-weight: bold;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background: #fff;
+                color: #000;
+            }
+            QTabBar::tab:!selected {
+                background: #e0e4ea;
+                color: #555;
+            }
+            QTabWidget::pane { border: none; }
+        """)
         self.suggestion_widgets = []
         self.llm_widgets = []
         for i, label in enumerate(advisor_names):
