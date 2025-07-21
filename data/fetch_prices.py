@@ -1,9 +1,14 @@
 import requests
+import os
 from datetime import datetime, timedelta
 
 COINGECKO_API_URL = "https://api.coingecko.com/api/v3"
 BITCOIN_ID = "bitcoin"
+
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+api_key = os.environ.get("COINGECKO_API_KEY")
+if api_key:
+    HEADERS["x-cg-pro-api-key"] = api_key
 
 
 def fetch_current_price():

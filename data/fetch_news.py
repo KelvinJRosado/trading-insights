@@ -27,6 +27,11 @@ def fetch_bitcoin_news():
             if title and url:
                 articles.append({"title": title, "url": url})
         return articles
+    except requests.exceptions.HTTPError as e:
+        print(f"CryptoPanic HTTP error: {e}")
+        print(f"Request URL: {resp.url}")
+        print(f"Response content: {resp.text}")
+        return []
     except Exception as e:
         print(f"Error fetching Bitcoin news: {e}")
         return []
