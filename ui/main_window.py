@@ -3,6 +3,7 @@ from PyQt5.QtCore import Qt
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
 from data.fetch_prices import get_prices_for_timeframe
+from analysis.insights import get_trading_insights
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -40,12 +41,14 @@ class MainWindow(QMainWindow):
         self.price_graph = PriceGraphWidget(self, dark_mode=True)
         self.layout.addWidget(self.price_graph)
 
-        # Placeholders for other sections
+        # Trading insights section
         self.insights_label = QLabel("[Trading Insights Placeholder]", self)
         self.insights_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.insights_label)
+
+        # News section placeholder
         self.news_label = QLabel("[News Section Placeholder]", self)
         self.news_label.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(self.insights_label)
         self.layout.addWidget(self.news_label)
 
         set_dark_theme(self)
@@ -66,6 +69,22 @@ class MainWindow(QMainWindow):
     def load_price_data(self, timeframe="24h"):
         data = get_prices_for_timeframe(timeframe)
         self.price_graph.plot_prices(data, title=f"Bitcoin Price ({timeframe})")
+        # Compute and display trading insights
+        prices = [price for _, price in data]
+        insights = get_trading_insights(prices)
+        self.display_insights(insights)
+
+    def display_insights(self, insights):
+        if not insights or insights['high'] is None or insights['low'] is None:
+            self.insights_label.setText("No trading insights available.")
+            return
+        text = (
+            f"<b>High:</b> {insights['high']:.2f} &nbsp; "
+            f"<b>Low:</b> {insights['low']:.2f} &nbsp; "
+            f"<b>RSI:</b> {insights['rsi_value']:.2f} ({insights['rsi_signal'].capitalize()}) &nbsp; "
+            f"<b>MA:</b> {insights['ma_value']:.2f} ({insights['ma_signal'].capitalize()})"
+        )
+        self.insights_label.setText(text)
 
     def on_timeframe_changed(self, timeframe):
         self.load_price_data(timeframe)
