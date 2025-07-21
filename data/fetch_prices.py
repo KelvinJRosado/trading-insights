@@ -10,6 +10,13 @@ api_key = os.environ.get("COINGECKO_API_KEY")
 if api_key:
     HEADERS["x-cg-pro-api-key"] = api_key
 
+# Simple in-memory cache for price data by timeframe
+_price_cache = {}
+
+def clear_cache():
+    global _price_cache
+    _price_cache = {}
+
 
 def fetch_current_price():
     """Fetch the current price of Bitcoin in USD."""
@@ -59,17 +66,25 @@ def get_prices_for_timeframe(timeframe: str):
     Get price data for a given timeframe: '1h', '24h', or '7d'.
     :return: List of (datetime, price) tuples
     """
+    if timeframe in _price_cache:
+        return _price_cache[timeframe]
     if timeframe == "1h":
-        # CoinGecko does not provide minute-level granularity for free, so fetch 1 day and slice last hour
         data = fetch_historical_prices(1, interval="hourly")
         if data:
             now = datetime.now()
             one_hour_ago = now - timedelta(hours=1)
-            return [(dt, price) for dt, price in data if dt >= one_hour_ago]
+            result = [(dt, price) for dt, price in data if dt >= one_hour_ago]
+            _price_cache[timeframe] = result
+            return result
+        _price_cache[timeframe] = []
         return []
     elif timeframe == "24h":
-        return fetch_historical_prices(1, interval="hourly")
+        result = fetch_historical_prices(1, interval="hourly")
+        _price_cache[timeframe] = result
+        return result
     elif timeframe == "7d":
-        return fetch_historical_prices(7, interval="hourly")
+        result = fetch_historical_prices(7, interval="hourly")
+        _price_cache[timeframe] = result
+        return result
     else:
         raise ValueError("Unsupported timeframe. Use '1h', '24h', or '7d'.")

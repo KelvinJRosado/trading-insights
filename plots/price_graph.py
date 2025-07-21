@@ -1,7 +1,8 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QToolTip
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 
 class PriceGraphWidget(QWidget):
     def __init__(self, parent=None, dark_mode=True):
@@ -15,6 +16,9 @@ class PriceGraphWidget(QWidget):
         self.ax = self.figure.add_subplot(111)
         self.figure.tight_layout()
         self.set_theme(self.dark_mode)
+        self.data = []
+        self._hover_cid = self.canvas.mpl_connect('motion_notify_event', self._on_hover)
+        self._last_annotation = None
 
     def set_theme(self, dark_mode):
         self.dark_mode = dark_mode
@@ -46,6 +50,7 @@ class PriceGraphWidget(QWidget):
         """
         data: list of (datetime, price) tuples
         """
+        self.data = data
         self.ax.clear()
         if self.dark_mode:
             self.ax.set_facecolor('#232323')
@@ -61,3 +66,22 @@ class PriceGraphWidget(QWidget):
             self.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
             self.figure.autofmt_xdate()
         self.canvas.draw()
+
+    def _on_hover(self, event):
+        if not self.data or not event.inaxes:
+            QToolTip.hideText()
+            return
+        # Find nearest data point
+        dates, prices = zip(*self.data)
+        if not dates:
+            return
+        xdata = mdates.date2num(dates)
+        mouse_x = event.xdata
+        if mouse_x is None:
+            QToolTip.hideText()
+            return
+        idx = min(range(len(xdata)), key=lambda i: abs(xdata[i] - mouse_x))
+        dt = dates[idx]
+        price = prices[idx]
+        tooltip_text = f"{dt.strftime('%Y-%m-%d %H:%M')}: ${price:,.2f}"
+        QToolTip.showText(self.mapToGlobal(self.canvas.pos()) + event.guiEvent.pos(), tooltip_text, self)
