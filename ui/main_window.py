@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout
 from PyQt5.QtCore import Qt
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
@@ -24,6 +24,18 @@ class MainWindow(QMainWindow):
         self.dark_action.triggered.connect(self.set_dark_mode)
         self.light_action.triggered.connect(self.set_light_mode)
 
+        # Timeframe selector
+        timeframe_layout = QHBoxLayout()
+        self.timeframe_combo = QComboBox(self)
+        self.timeframe_combo.addItems(["1h", "24h", "7d"])
+        self.timeframe_combo.setCurrentText("24h")
+        self.timeframe_combo.currentTextChanged.connect(self.on_timeframe_changed)
+        timeframe_label = QLabel("Timeframe:", self)
+        timeframe_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        timeframe_layout.addWidget(timeframe_label)
+        timeframe_layout.addWidget(self.timeframe_combo)
+        self.layout.addLayout(timeframe_layout)
+
         # Price graph widget
         self.price_graph = PriceGraphWidget(self, dark_mode=True)
         self.layout.addWidget(self.price_graph)
@@ -37,7 +49,7 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.news_label)
 
         set_dark_theme(self)
-        self.load_price_data()
+        self.load_price_data("24h")
 
     def set_dark_mode(self):
         self.dark_action.setChecked(True)
@@ -54,6 +66,9 @@ class MainWindow(QMainWindow):
     def load_price_data(self, timeframe="24h"):
         data = get_prices_for_timeframe(timeframe)
         self.price_graph.plot_prices(data, title=f"Bitcoin Price ({timeframe})")
+
+    def on_timeframe_changed(self, timeframe):
+        self.load_price_data(timeframe)
 
 # For standalone testing
 if __name__ == "__main__":
