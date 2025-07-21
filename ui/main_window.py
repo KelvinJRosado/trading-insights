@@ -51,6 +51,7 @@ class ConsensusLLMWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.llm_threads = []  # Store references to all running LLM threads
         self.setWindowTitle("Trading Insights - Bitcoin")
         self.resize(1000, 700)
         self.central_widget = QWidget()
@@ -170,7 +171,6 @@ class MainWindow(QMainWindow):
 
         set_dark_theme(self)
         self.load_price_data("24h")
-        self.llm_threads = []  # Store references to all running LLM threads
 
     def set_dark_mode(self):
         self.dark_action.setChecked(True)
