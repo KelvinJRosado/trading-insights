@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser, QToolBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
@@ -12,38 +12,47 @@ import asyncio
 
 class LLMWorker(QThread):
     result_ready = pyqtSignal(int, str)
-    def __init__(self, idx, persona, insights, parent=None):
+    def __init__(self, idx, persona, insights, llm_outputs, parent=None):
         super().__init__(parent)
         self.idx = idx
         self.persona = persona
         self.insights = insights
+        self.llm_outputs = llm_outputs
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         result = loop.run_until_complete(self.call_ollama())
+        self.llm_outputs[self.idx] = result
         self.result_ready.emit(self.idx, result)
+        # If all outputs are ready, trigger consensus LLM
+        if all(self.llm_outputs):
+            self.parent().start_consensus_llm(self.llm_outputs)
     async def call_ollama(self):
-        prompt = f"You are {self.persona}, a financial advisor. Here are the trading insights: {self.insights}. Please explain these insights in simple, friendly English for a non-expert investor."
+        prompt = f"You are {self.persona}, a financial advisor. Your goal is to help your client make the greatest gains. Here are the trading insights: {self.insights}. Please explain these insights in simple, friendly English for a non-expert investor."
         try:
-            response = await ollama.AsyncClient().generate(model='llama3.2', prompt=prompt)
+            response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
             return response['response'].strip()
         except Exception as e:
             return f"[LLM error: {e}]"
 
 class ConsensusLLMWorker(QThread):
     result_ready = pyqtSignal(str)
-    def __init__(self, insights, parent=None):
+    def __init__(self, advisor_outputs, parent=None):
         super().__init__(parent)
-        self.insights = insights
+        self.advisor_outputs = advisor_outputs
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         result = loop.run_until_complete(self.call_ollama())
         self.result_ready.emit(result)
     async def call_ollama(self):
-        prompt = f"You are a panel of financial advisors. Here is the consensus of their trading insights: {self.insights}. Please explain the consensus in simple, friendly English for a non-expert investor."
+        prompt = (
+            "You are a panel of financial advisors. Here are the opinions of three advisors: "
+            f"\n\nAdvisor 1: {self.advisor_outputs[0]}\n\nAdvisor 2: {self.advisor_outputs[1]}\n\nAdvisor 3: {self.advisor_outputs[2]}\n\n"
+            "Please summarize the consensus in simple, friendly English for a non-expert investor, focusing on maximizing gains."
+        )
         try:
-            response = await ollama.AsyncClient().generate(model='llama3.2', prompt=prompt)
+            response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
             return response['response'].strip()
         except Exception as e:
             return f"[LLM error: {e}]"
@@ -120,46 +129,37 @@ class MainWindow(QMainWindow):
         self.suggestion_tabs.setStyleSheet("QTabBar::tab { min-width: 33%; padding: 10px; font-weight: bold; } QTabWidget::pane { border: none; }")
         self.suggestion_widgets = []
         self.llm_widgets = []
+        self.suggestion_toolboxes = [] # Store toolboxes for each tab
         for i, label in enumerate(advisor_names):
             tab = QWidget()
             tab.layout = QVBoxLayout(tab)
-            hbox = QHBoxLayout()
-            # Left (insights)
+            # Collapsible insights section
+            toolbox = QToolBox()
+            insights_widget = QWidget()
+            insights_layout = QVBoxLayout(insights_widget)
             left_label = QLabel(f"[Suggestions for {label}]")
             left_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             left_label.setWordWrap(True)
             left_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
             left_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            left_scroll = QScrollArea()
-            left_scroll.setWidgetResizable(True)
-            left_scroll.setWidget(left_label)
-            left_scroll.setMaximumHeight(220)
-            left_scroll.setStyleSheet("background: transparent; border: none;")
-            # Vertical separator
-            vline = QFrame()
-            vline.setFrameShape(QFrame.VLine)
-            vline.setFrameShadow(QFrame.Sunken)
-            vline.setStyleSheet("color: #888; background: #888; width: 2px;")
-            # Right (LLM output, markdown rendered)
+            insights_layout.addWidget(left_label)
+            toolbox.addItem(insights_widget, "Show Trading Insights")
+            toolbox.setCurrentIndex(-1)  # Minimized by default
+            # LLM output area (QTextBrowser, large font)
             right_browser = QTextBrowser()
             right_browser.setOpenExternalLinks(True)
             right_browser.setReadOnly(True)
-            right_browser.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px; background: transparent; border: none;")
-            right_browser.setMaximumHeight(220)
+            right_browser.setStyleSheet("font-size: 16px; padding: 8px 0 8px 16px; background: transparent; border: none; color: inherit;")
+            right_browser.setMaximumHeight(400)
             right_browser.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            right_browser.setMarkdown("<i>Loading advisor explanation...</i>")
-            right_scroll = QScrollArea()
-            right_scroll.setWidgetResizable(True)
-            right_scroll.setWidget(right_browser)
-            right_scroll.setMaximumHeight(220)
-            right_scroll.setStyleSheet("background: transparent; border: none;")
-            hbox.addWidget(left_scroll, 2)
-            hbox.addWidget(vline)
-            hbox.addWidget(right_scroll, 1)
-            tab.layout.addLayout(hbox)
+            right_browser.setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
+            # Layout: insights (collapsible) above, LLM output below
+            tab.layout.addWidget(toolbox)
+            tab.layout.addWidget(right_browser, stretch=1)
             self.suggestion_tabs.addTab(tab, label)
             self.suggestion_widgets.append(left_label)
             self.llm_widgets.append(right_browser)
+            self.suggestion_toolboxes.append(toolbox)
         self.suggestion_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.layout.addWidget(self.suggestion_tabs)
 
@@ -233,6 +233,7 @@ class MainWindow(QMainWindow):
         methods = ["Technical Analysis", "Momentum Model", "Simple ML"]
         all_suggestions = []
         self._cleanup_threads()  # Clean up finished threads before starting new ones
+        self.llm_outputs = [None, None, None]  # Store LLM outputs for consensus
         for i, method in enumerate(methods):
             suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
             left_text = (
@@ -245,20 +246,18 @@ class MainWindow(QMainWindow):
                 f"<b>Reasoning:</b> {reason}"
             )
             self.suggestion_widgets[i].setText(left_text)
-            self.llm_widgets[i].setMarkdown("<i>Loading advisor explanation...</i>")
+            self.llm_widgets[i].setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
             all_suggestions.append({
                 'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 'suggestion': suggestion,
                 'reason': reason, 'advisor': advisor_names[i], 'method': method
             })
-            # Start LLM worker for this advisor
             persona = advisor_names[i]
             insights_str = left_text.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
-            worker = LLMWorker(i, persona, insights_str)
+            worker = LLMWorker(i, persona, insights_str, self.llm_outputs, self)
             worker.result_ready.connect(self.update_llm_tab)
             worker.finished.connect(lambda: self._cleanup_threads())
             self.llm_threads.append(worker)
             worker.start()
-        # Consensus logic: majority vote for buy/sell/hold, average for price changes
         consensus = self._generate_consensus(all_suggestions)
         consensus_left = (
             f"<b>Consensus Insights</b><br>"
@@ -270,25 +269,20 @@ class MainWindow(QMainWindow):
             f"<b>Overall Suggestion:</b> {consensus['suggestion']}"
         )
         self.consensus_label.setText(consensus_left)
-        # Start LLM worker for consensus
-        consensus_str = consensus_left.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
+        # Consensus LLM output as QTextBrowser
         self.consensus_llm_label = getattr(self, 'consensus_llm_label', None)
         if not self.consensus_llm_label:
             self.consensus_llm_label = QTextBrowser()
             self.consensus_llm_label.setOpenExternalLinks(True)
             self.consensus_llm_label.setReadOnly(True)
-            self.consensus_llm_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px; background: transparent; border: none;")
-            self.consensus_llm_label.setMaximumHeight(220)
+            self.consensus_llm_label.setStyleSheet("font-size: 16px; padding: 8px 0 8px 16px; background: transparent; border: none; color: inherit;")
+            self.consensus_llm_label.setMaximumHeight(400)
             self.consensus_llm_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            self.consensus_llm_label.setMarkdown("<i>Loading consensus explanation...</i>")
+            self.consensus_llm_label.setMarkdown("<span style='color:inherit;'><i>Loading consensus explanation...</i></span>")
             self.layout.insertWidget(self.layout.indexOf(self.consensus_label) + 1, self.consensus_llm_label)
         else:
-            self.consensus_llm_label.setMarkdown("<i>Loading consensus explanation...</i>")
-        worker = ConsensusLLMWorker(consensus_str)
-        worker.result_ready.connect(self.update_llm_consensus)
-        worker.finished.connect(lambda: self._cleanup_threads())
-        self.llm_threads.append(worker)
-        worker.start()
+            self.consensus_llm_label.setMarkdown("<span style='color:inherit;'><i>Loading consensus explanation...</i></span>")
+        self.consensus_llm_waiting = True
 
     def _generate_method_insights(self, insights, prices, method):
         # Placeholder logic: can be replaced with method-specific logic
@@ -373,6 +367,10 @@ class MainWindow(QMainWindow):
 
     def update_llm_tab(self, idx, text):
         self.llm_widgets[idx].setMarkdown(text)
+        # If all advisor outputs are ready, trigger consensus LLM
+        if hasattr(self, 'llm_outputs') and all(self.llm_outputs) and getattr(self, 'consensus_llm_waiting', False):
+            self.start_consensus_llm(self.llm_outputs)
+            self.consensus_llm_waiting = False
 
     def update_llm_consensus(self, text):
         self.consensus_llm_label.setMarkdown(text)
@@ -387,6 +385,13 @@ class MainWindow(QMainWindow):
             thread.quit()
             thread.wait()
         event.accept()
+
+    def start_consensus_llm(self, advisor_outputs):
+        worker = ConsensusLLMWorker(advisor_outputs)
+        worker.result_ready.connect(self.update_llm_consensus)
+        worker.finished.connect(lambda: self._cleanup_threads())
+        self.llm_threads.append(worker)
+        worker.start()
 
 # For standalone testing
 if __name__ == "__main__":
