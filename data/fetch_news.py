@@ -1,4 +1,5 @@
 import requests
+import os
 
 CRYPTOPANIC_API_URL = "https://cryptopanic.com/api/v1/posts/"
 
@@ -12,6 +13,9 @@ def fetch_bitcoin_news():
         "currencies": "BTC",
         "public": "true"
     }
+    api_key = os.environ.get("CRYPTOPANIC_API_KEY")
+    if api_key:
+        params["auth_token"] = api_key
     try:
         resp = requests.get(CRYPTOPANIC_API_URL, params=params, timeout=10)
         resp.raise_for_status()

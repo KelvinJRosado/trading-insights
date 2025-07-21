@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 COINGECKO_API_URL = "https://api.coingecko.com/api/v3"
 BITCOIN_ID = "bitcoin"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
 def fetch_current_price():
@@ -10,7 +11,7 @@ def fetch_current_price():
     url = f"{COINGECKO_API_URL}/simple/price"
     params = {"ids": BITCOIN_ID, "vs_currencies": "usd"}
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get(url, params=params, headers=HEADERS, timeout=10)
         resp.raise_for_status()
         return resp.json()[BITCOIN_ID]["usd"]
     except Exception as e:
@@ -28,7 +29,7 @@ def fetch_historical_prices(days: int, interval: str = "hourly"):
     url = f"{COINGECKO_API_URL}/coins/{BITCOIN_ID}/market_chart"
     params = {"vs_currency": "usd", "days": days, "interval": interval}
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get(url, params=params, headers=HEADERS, timeout=10)
         resp.raise_for_status()
         data = resp.json()["prices"]  # List of [timestamp, price]
         # Convert ms timestamps to datetime objects
