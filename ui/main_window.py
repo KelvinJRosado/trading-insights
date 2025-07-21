@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser, QToolBox
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem, QScrollArea, QTextBrowser, QToolBox, QSizePolicy
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
@@ -12,11 +12,12 @@ import asyncio
 
 class LLMWorker(QThread):
     result_ready = pyqtSignal(int, str)
-    def __init__(self, idx, persona, insights, llm_outputs, parent=None):
+    def __init__(self, idx, persona, insights, method, llm_outputs, parent=None):
         super().__init__(parent)
         self.idx = idx
         self.persona = persona
         self.insights = insights
+        self.method = method
         self.llm_outputs = llm_outputs
     def run(self):
         loop = asyncio.new_event_loop()
@@ -28,7 +29,7 @@ class LLMWorker(QThread):
         if all(self.llm_outputs):
             self.parent().start_consensus_llm(self.llm_outputs)
     async def call_ollama(self):
-        # Inject advisor personality into the prompt
+        # Inject advisor personality and method into the prompt
         if self.persona == "Conservative Carl":
             personality = (
                 "You are Conservative Carl, a financial advisor who always prioritizes minimizing risk, playing it safe, and steady, reliable growth. "
@@ -51,6 +52,7 @@ class LLMWorker(QThread):
             personality = f"You are {self.persona}, a financial advisor."
         prompt = (
             f"{personality}\n\n"
+            f"The method you used to generate these insights is: {self.method}.\n"
             "Your goal is to help your client make the greatest gains, but your advice should reflect your unique personality. "
             f"Here are the trading insights: {self.insights}. "
             "Please explain these insights in simple, friendly English for a non-expert investor, and make sure your suggestions reflect your personal style."
@@ -88,9 +90,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.llm_threads = []  # Store references to all running LLM threads
         self.setWindowTitle("Trading Insights - Bitcoin")
-        self.resize(1000, 700)
+        self.resize(1200, 900)  # Larger default window size
         self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.central_widget)
+        self.setCentralWidget(self.scroll_area)
         self.layout = QVBoxLayout(self.central_widget)
 
         # Menu bar for theme switching (remove dark mode)
@@ -103,7 +108,7 @@ class MainWindow(QMainWindow):
         self.light_action.setEnabled(False)
 
         # Add top spacer (larger)
-        self.layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Fixed))
+        self.layout.addSpacing(30)
 
         # Timeframe selector
         timeframe_layout = QHBoxLayout()
@@ -117,9 +122,12 @@ class MainWindow(QMainWindow):
         timeframe_layout.addWidget(self.timeframe_combo)
         self.layout.addLayout(timeframe_layout)
 
-        # Price graph widget
+        # Price graph widget (more space)
         self.price_graph = PriceGraphWidget(self, dark_mode=False)
-        self.layout.addWidget(self.price_graph)
+        self.price_graph.setMinimumHeight(350)
+        self.price_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.layout.addWidget(self.price_graph, stretch=2)
+        self.layout.addSpacing(20)
 
         # Divider below graph
         self.divider1 = QFrame()
@@ -128,21 +136,8 @@ class MainWindow(QMainWindow):
         self.divider1.setStyleSheet("color: #888; background: #888; height: 2px;")
         self.layout.addWidget(self.divider1)
 
-        # Trading insights section
-        self.insights_label = QLabel("[Trading Insights Placeholder]", self)
-        self.insights_label.setAlignment(Qt.AlignCenter)
-        self.insights_label.setObjectName("insightsLabel")
-        self.insights_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.layout.addWidget(self.insights_label)
-
-        # Divider below insights
-        self.divider2 = QFrame()
-        self.divider2.setFrameShape(QFrame.HLine)
-        self.divider2.setFrameShadow(QFrame.Sunken)
-        self.divider2.setStyleSheet("color: #888; background: #888; height: 2px;")
-        self.layout.addWidget(self.divider2)
-
-        # Suggestion section as tabs
+        # Trading insights section (collapsible, hidden by default)
+        self.suggestion_toolboxes = []
         advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
         self.suggestion_tabs = QTabWidget(self)
         self.suggestion_tabs.setTabPosition(QTabWidget.North)
@@ -150,10 +145,9 @@ class MainWindow(QMainWindow):
         self.suggestion_tabs.setMovable(False)
         self.suggestion_tabs.setUsesScrollButtons(False)
         self.suggestion_tabs.setDocumentMode(True)
-        self.suggestion_tabs.setStyleSheet("QTabBar::tab { min-width: 33%; padding: 10px; font-weight: bold; } QTabWidget::pane { border: none; }")
+        self.suggestion_tabs.setStyleSheet("QTabBar::tab { min-width: 33%; min-height: 40px; font-size: 16px; padding: 10px; font-weight: bold; } QTabWidget::pane { border: none; }")
         self.suggestion_widgets = []
         self.llm_widgets = []
-        self.suggestion_toolboxes = [] # Store toolboxes for each tab
         for i, label in enumerate(advisor_names):
             tab = QWidget()
             tab.layout = QVBoxLayout(tab)
@@ -169,16 +163,29 @@ class MainWindow(QMainWindow):
             insights_layout.addWidget(left_label)
             toolbox.addItem(insights_widget, "Show Trading Insights")
             toolbox.setCurrentIndex(-1)  # Minimized by default
+            toolbox.setVisible(False)  # Hidden by default
+            # Add a button to expand/collapse
+            from PyQt5.QtWidgets import QPushButton
+            toggle_btn = QPushButton("Show Trading Insights")
+            toggle_btn.setCheckable(True)
+            toggle_btn.setChecked(False)
+            def make_toggle(tb=toolbox, btn=toggle_btn):
+                def toggle():
+                    tb.setVisible(btn.isChecked())
+                    btn.setText("Hide Trading Insights" if btn.isChecked() else "Show Trading Insights")
+                return toggle
+            toggle_btn.clicked.connect(make_toggle())
+            tab.layout.addWidget(toggle_btn)
+            tab.layout.addWidget(toolbox)
             # LLM output area (QTextBrowser, large font)
             right_browser = QTextBrowser()
             right_browser.setOpenExternalLinks(True)
             right_browser.setReadOnly(True)
             right_browser.setStyleSheet("font-size: 16px; padding: 8px 0 8px 16px; background: transparent; border: none; color: inherit;")
+            right_browser.setMinimumHeight(250)
             right_browser.setMaximumHeight(400)
             right_browser.setTextInteractionFlags(Qt.TextSelectableByMouse)
             right_browser.setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
-            # Layout: insights (collapsible) above, LLM output below
-            tab.layout.addWidget(toolbox)
             tab.layout.addWidget(right_browser, stretch=1)
             self.suggestion_tabs.addTab(tab, label)
             self.suggestion_widgets.append(left_label)
@@ -272,7 +279,7 @@ class MainWindow(QMainWindow):
             })
             persona = advisor_names[i]
             insights_str = left_text.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
-            worker = LLMWorker(i, persona, insights_str, self.llm_outputs, self)
+            worker = LLMWorker(i, persona, insights_str, method, self.llm_outputs, self)
             worker.result_ready.connect(self.update_llm_tab)
             worker.finished.connect(lambda: self._cleanup_threads())
             self.llm_threads.append(worker)
