@@ -170,6 +170,7 @@ class MainWindow(QMainWindow):
 
         set_dark_theme(self)
         self.load_price_data("24h")
+        self.llm_threads = []  # Store references to all running LLM threads
 
     def set_dark_mode(self):
         self.dark_action.setChecked(True)
@@ -211,6 +212,7 @@ class MainWindow(QMainWindow):
         advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
         methods = ["Technical Analysis", "Momentum Model", "Simple ML"]
         all_suggestions = []
+        self._cleanup_threads()  # Clean up finished threads before starting new ones
         for i, method in enumerate(methods):
             suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
             left_text = (
@@ -233,6 +235,8 @@ class MainWindow(QMainWindow):
             insights_str = left_text.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
             worker = LLMWorker(i, persona, insights_str)
             worker.result_ready.connect(self.update_llm_tab)
+            worker.finished.connect(lambda: self._cleanup_threads())
+            self.llm_threads.append(worker)
             worker.start()
         # Consensus logic: majority vote for buy/sell/hold, average for price changes
         consensus = self._generate_consensus(all_suggestions)
@@ -259,6 +263,8 @@ class MainWindow(QMainWindow):
             self.consensus_llm_label.setText("<i>Loading consensus explanation...</i>")
         worker = ConsensusLLMWorker(consensus_str)
         worker.result_ready.connect(self.update_llm_consensus)
+        worker.finished.connect(lambda: self._cleanup_threads())
+        self.llm_threads.append(worker)
         worker.start()
 
     def _generate_method_insights(self, insights, prices, method):
@@ -347,6 +353,17 @@ class MainWindow(QMainWindow):
 
     def update_llm_consensus(self, text):
         self.consensus_llm_label.setText(text)
+
+    def _cleanup_threads(self):
+        # Remove finished threads from the list
+        self.llm_threads = [t for t in self.llm_threads if t.isRunning()]
+
+    def closeEvent(self, event):
+        # Gracefully stop all running threads
+        for thread in self.llm_threads:
+            thread.quit()
+            thread.wait()
+        event.accept()
 
 # For standalone testing
 if __name__ == "__main__":
