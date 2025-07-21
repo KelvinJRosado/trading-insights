@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication, QComboBox, QHBoxLayout, QTabWidget, QTabWidget, QWidget, QVBoxLayout, QFrame, QSizePolicy, QSpacerItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
 from data.fetch_prices import get_prices_for_timeframe
@@ -7,6 +7,46 @@ from analysis.insights import get_trading_insights
 from sklearn.linear_model import LinearRegression
 import numpy as np
 from collections import Counter
+import ollama
+import asyncio
+
+class LLMWorker(QThread):
+    result_ready = pyqtSignal(int, str)
+    def __init__(self, idx, persona, insights, parent=None):
+        super().__init__(parent)
+        self.idx = idx
+        self.persona = persona
+        self.insights = insights
+    def run(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(self.call_ollama())
+        self.result_ready.emit(self.idx, result)
+    async def call_ollama(self):
+        prompt = f"You are {self.persona}, a financial advisor. Here are the trading insights: {self.insights}. Please explain these insights in simple, friendly English for a non-expert investor."
+        try:
+            response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
+            return response['response'].strip()
+        except Exception as e:
+            return f"[LLM error: {e}]"
+
+class ConsensusLLMWorker(QThread):
+    result_ready = pyqtSignal(str)
+    def __init__(self, insights, parent=None):
+        super().__init__(parent)
+        self.insights = insights
+    def run(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(self.call_ollama())
+        self.result_ready.emit(result)
+    async def call_ollama(self):
+        prompt = f"You are a panel of financial advisors. Here is the consensus of their trading insights: {self.insights}. Please explain the consensus in simple, friendly English for a non-expert investor."
+        try:
+            response = await ollama.AsyncClient().generate(model='llama3.2:latest', prompt=prompt)
+            return response['response'].strip()
+        except Exception as e:
+            return f"[LLM error: {e}]"
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -68,6 +108,7 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.divider2)
 
         # Suggestion section as tabs
+        advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
         self.suggestion_tabs = QTabWidget(self)
         self.suggestion_tabs.setTabPosition(QTabWidget.North)
         self.suggestion_tabs.setTabShape(QTabWidget.Rounded)
@@ -76,16 +117,30 @@ class MainWindow(QMainWindow):
         self.suggestion_tabs.setDocumentMode(True)
         self.suggestion_tabs.setStyleSheet("QTabBar::tab { min-width: 33%; padding: 10px; font-weight: bold; } QTabWidget::pane { border: none; }")
         self.suggestion_widgets = []
-        for i, label in enumerate(["Technical Analysis", "Momentum Model", "Simple ML"]):
+        self.llm_widgets = []
+        for i, label in enumerate(advisor_names):
             tab = QWidget()
             tab.layout = QVBoxLayout(tab)
-            label_widget = QLabel(f"[Suggestions for {label}]")
-            label_widget.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            label_widget.setWordWrap(True)
-            label_widget.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
-            tab.layout.addWidget(label_widget)
+            hbox = QHBoxLayout()
+            left = QLabel(f"[Suggestions for {label}]")
+            left.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            left.setWordWrap(True)
+            left.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
+            vline = QFrame()
+            vline.setFrameShape(QFrame.VLine)
+            vline.setFrameShadow(QFrame.Sunken)
+            vline.setStyleSheet("color: #888; background: #888; width: 2px;")
+            right = QLabel("<i>Loading advisor explanation...</i>")
+            right.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            right.setWordWrap(True)
+            right.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
+            hbox.addWidget(left, 2)
+            hbox.addWidget(vline)
+            hbox.addWidget(right, 1)
+            tab.layout.addLayout(hbox)
             self.suggestion_tabs.addTab(tab, label)
-            self.suggestion_widgets.append(label_widget)
+            self.suggestion_widgets.append(left)
+            self.llm_widgets.append(right)
         self.suggestion_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.layout.addWidget(self.suggestion_tabs)
 
@@ -153,45 +208,35 @@ class MainWindow(QMainWindow):
         self.insights_label.setText(text)
 
     def display_suggestions_and_consensus(self, insights, prices):
-        # Generate insights for each method
-        # For now, use the same logic for all three as a placeholder
+        advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
         methods = ["Technical Analysis", "Momentum Model", "Simple ML"]
         all_suggestions = []
         for i, method in enumerate(methods):
-            # Placeholder: use the same insights for all
             suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
-            # Add vertical separator and placeholder in tab content
-            tab = self.suggestion_tabs.widget(i)
-            # Remove old layout widgets if any
-            while tab.layout.count() > 0:
-                item = tab.layout.takeAt(0)
-                widget = item.widget()
-                if widget:
-                    widget.deleteLater()
-            hbox = QHBoxLayout()
-            left = QLabel(self.suggestion_widgets[i].text())
-            left.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            left.setWordWrap(True)
-            left.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
-            vline = QFrame()
-            vline.setFrameShape(QFrame.VLine)
-            vline.setFrameShadow(QFrame.Sunken)
-            vline.setStyleSheet("color: #888; background: #888; width: 2px;")
-            right = QLabel("<i>Future content here</i>")
-            right.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            right.setWordWrap(True)
-            right.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
-            hbox.addWidget(left, 2)
-            hbox.addWidget(vline)
-            hbox.addWidget(right, 1)
-            tab.layout.addLayout(hbox)
-            self.suggestion_widgets[i] = left
+            left_text = (
+                f"<b>Short-term:</b> {st}<br>"
+                f"<b>Medium-term:</b> {mt}<br>"
+                f"<b>Long-term:</b> {lt}<br>"
+                f"<b>Buy now:</b> {buy}<br>"
+                f"<b>Sell now:</b> {sell}<br>"
+                f"<b>Suggestion:</b> {suggestion}<br>"
+                f"<b>Reasoning:</b> {reason}"
+            )
+            self.suggestion_widgets[i].setText(left_text)
+            self.llm_widgets[i].setText("<i>Loading advisor explanation...</i>")
             all_suggestions.append({
-                'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 'suggestion': suggestion
+                'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 'suggestion': suggestion,
+                'reason': reason, 'advisor': advisor_names[i], 'method': method
             })
+            # Start LLM worker for this advisor
+            persona = advisor_names[i]
+            insights_str = left_text.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
+            worker = LLMWorker(i, persona, insights_str)
+            worker.result_ready.connect(self.update_llm_tab)
+            worker.start()
         # Consensus logic: majority vote for buy/sell/hold, average for price changes
         consensus = self._generate_consensus(all_suggestions)
-        self.consensus_label.setText(
+        consensus_left = (
             f"<b>Consensus Insights</b><br>"
             f"<b>Short-term:</b> {consensus['short']}<br>"
             f"<b>Medium-term:</b> {consensus['medium']}<br>"
@@ -200,6 +245,21 @@ class MainWindow(QMainWindow):
             f"<b>Sell now:</b> {consensus['sell']}<br>"
             f"<b>Overall Suggestion:</b> {consensus['suggestion']}"
         )
+        self.consensus_label.setText(consensus_left)
+        # Start LLM worker for consensus
+        consensus_str = consensus_left.replace('<br>', '\n').replace('<b>', '').replace('</b>', '')
+        self.consensus_llm_label = getattr(self, 'consensus_llm_label', None)
+        if not self.consensus_llm_label:
+            self.consensus_llm_label = QLabel("<i>Loading consensus explanation...</i>")
+            self.consensus_llm_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            self.consensus_llm_label.setWordWrap(True)
+            self.consensus_llm_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
+            self.layout.insertWidget(self.layout.indexOf(self.consensus_label) + 1, self.consensus_llm_label)
+        else:
+            self.consensus_llm_label.setText("<i>Loading consensus explanation...</i>")
+        worker = ConsensusLLMWorker(consensus_str)
+        worker.result_ready.connect(self.update_llm_consensus)
+        worker.start()
 
     def _generate_method_insights(self, insights, prices, method):
         # Placeholder logic: can be replaced with method-specific logic
@@ -281,6 +341,12 @@ class MainWindow(QMainWindow):
 
     def on_timeframe_changed(self, timeframe):
         self.load_price_data(timeframe)
+
+    def update_llm_tab(self, idx, text):
+        self.llm_widgets[idx].setText(text)
+
+    def update_llm_consensus(self, text):
+        self.consensus_llm_label.setText(text)
 
 # For standalone testing
 if __name__ == "__main__":
