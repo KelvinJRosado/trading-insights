@@ -3,6 +3,7 @@ from PyQt5.QtCore import Qt
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
 from data.fetch_prices import get_prices_for_timeframe
+from data.fetch_news import fetch_bitcoin_news
 from analysis.insights import get_trading_insights
 
 class MainWindow(QMainWindow):
@@ -46,13 +47,16 @@ class MainWindow(QMainWindow):
         self.insights_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.insights_label)
 
-        # News section placeholder
+        # News section
         self.news_label = QLabel("[News Section Placeholder]", self)
-        self.news_label.setAlignment(Qt.AlignCenter)
+        self.news_label.setAlignment(Qt.AlignTop)
+        self.news_label.setOpenExternalLinks(True)
+        self.news_label.setWordWrap(True)
         self.layout.addWidget(self.news_label)
 
         set_dark_theme(self)
         self.load_price_data("24h")
+        self.load_news()
 
     def set_dark_mode(self):
         self.dark_action.setChecked(True)
@@ -85,6 +89,17 @@ class MainWindow(QMainWindow):
             f"<b>MA:</b> {insights['ma_value']:.2f} ({insights['ma_signal'].capitalize()})"
         )
         self.insights_label.setText(text)
+
+    def load_news(self):
+        articles = fetch_bitcoin_news()
+        if not articles:
+            self.news_label.setText("No news articles available.")
+            return
+        html = "<b>Latest Bitcoin News:</b><ul>"
+        for article in articles:
+            html += f'<li><a href="{article["url"]}">{article["title"]}</a></li>'
+        html += "</ul>"
+        self.news_label.setText(html)
 
     def on_timeframe_changed(self, timeframe):
         self.load_price_data(timeframe)
