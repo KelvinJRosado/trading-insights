@@ -25,7 +25,7 @@ class LLMWorker(QThread):
     async def call_ollama(self):
         prompt = f"You are {self.persona}, a financial advisor. Here are the trading insights: {self.insights}. Please explain these insights in simple, friendly English for a non-expert investor."
         try:
-            response = await ollama.AsyncClient().generate(model='llama4', prompt=prompt)
+            response = await ollama.AsyncClient().generate(model='llama3.2', prompt=prompt)
             return response['response'].strip()
         except Exception as e:
             return f"[LLM error: {e}]"
@@ -43,7 +43,7 @@ class ConsensusLLMWorker(QThread):
     async def call_ollama(self):
         prompt = f"You are a panel of financial advisors. Here is the consensus of their trading insights: {self.insights}. Please explain the consensus in simple, friendly English for a non-expert investor."
         try:
-            response = await ollama.AsyncClient().generate(model='llama4', prompt=prompt)
+            response = await ollama.AsyncClient().generate(model='llama3.2', prompt=prompt)
             return response['response'].strip()
         except Exception as e:
             return f"[LLM error: {e}]"
@@ -99,6 +99,7 @@ class MainWindow(QMainWindow):
         self.insights_label = QLabel("[Trading Insights Placeholder]", self)
         self.insights_label.setAlignment(Qt.AlignCenter)
         self.insights_label.setObjectName("insightsLabel")
+        self.insights_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.layout.addWidget(self.insights_label)
 
         # Divider below insights
@@ -127,6 +128,7 @@ class MainWindow(QMainWindow):
             left.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             left.setWordWrap(True)
             left.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
+            left.setTextInteractionFlags(Qt.TextSelectableByMouse)
             vline = QFrame()
             vline.setFrameShape(QFrame.VLine)
             vline.setFrameShadow(QFrame.Sunken)
@@ -135,6 +137,7 @@ class MainWindow(QMainWindow):
             right.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             right.setWordWrap(True)
             right.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
+            right.setTextInteractionFlags(Qt.TextSelectableByMouse)
             hbox.addWidget(left, 2)
             hbox.addWidget(vline)
             hbox.addWidget(right, 1)
@@ -157,6 +160,7 @@ class MainWindow(QMainWindow):
         self.consensus_label.setAlignment(Qt.AlignCenter)
         self.consensus_label.setWordWrap(True)
         self.consensus_label.setObjectName("consensusLabel")
+        self.consensus_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.layout.addWidget(self.consensus_label)
 
         # Prediction section
@@ -164,6 +168,7 @@ class MainWindow(QMainWindow):
         self.prediction_label.setAlignment(Qt.AlignCenter)
         self.prediction_label.setWordWrap(True)
         self.prediction_label.setObjectName("predictionLabel")
+        self.prediction_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.layout.addWidget(self.prediction_label)
 
         # Set background color for main window
@@ -258,6 +263,7 @@ class MainWindow(QMainWindow):
             self.consensus_llm_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             self.consensus_llm_label.setWordWrap(True)
             self.consensus_llm_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 16px;")
+            self.consensus_llm_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             self.layout.insertWidget(self.layout.indexOf(self.consensus_label) + 1, self.consensus_llm_label)
         else:
             self.consensus_llm_label.setText("<i>Loading consensus explanation...</i>")
