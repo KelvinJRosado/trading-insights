@@ -21,6 +21,10 @@ def fetch_current_price():
         return resp.json()[BITCOIN_ID]["usd"]
     except Exception as e:
         print(f"Error fetching current price: {e}")
+        print(f"Request URL: {url}")
+        print(f"Params: {params}")
+        if 'resp' in locals():
+            print(f"Response content: {resp.text}")
         return None
 
 
@@ -32,7 +36,9 @@ def fetch_historical_prices(days: int, interval: str = "hourly"):
     :return: List of (timestamp, price) tuples
     """
     url = f"{COINGECKO_API_URL}/coins/{BITCOIN_ID}/market_chart"
-    params = {"vs_currency": "usd", "days": days, "interval": interval}
+    params = {"vs_currency": "usd", "days": days}
+    if not api_key:
+        params["interval"] = interval
     try:
         resp = requests.get(url, params=params, headers=HEADERS, timeout=10)
         resp.raise_for_status()
@@ -41,6 +47,10 @@ def fetch_historical_prices(days: int, interval: str = "hourly"):
         return [(datetime.fromtimestamp(ts/1000), price) for ts, price in data]
     except Exception as e:
         print(f"Error fetching historical prices: {e}")
+        print(f"Request URL: {url}")
+        print(f"Params: {params}")
+        if 'resp' in locals():
+            print(f"Response content: {resp.text}")
         return []
 
 

@@ -1,37 +1,29 @@
 import requests
-import os
 
-CRYPTOPANIC_API_URL = "https://cryptopanic.com/api/v1/posts/"
+COINGECKO_API_URL = "https://api.coingecko.com/api/v3"
+BITCOIN_ID = "bitcoin"
 
 
 def fetch_bitcoin_news():
     """
-    Fetch recent news articles about Bitcoin from CryptoPanic.
+    Fetch recent news/status updates about Bitcoin from CoinGecko.
     Returns a list of dicts: [{"title": ..., "url": ...}, ...]
     """
-    params = {
-        "currencies": "BTC",
-        "public": "true"
-    }
-    api_key = os.environ.get("CRYPTOPANIC_API_KEY")
-    if api_key:
-        params["auth_token"] = api_key
+    url = f"{COINGECKO_API_URL}/coins/{BITCOIN_ID}/status_updates"
     try:
-        resp = requests.get(CRYPTOPANIC_API_URL, params=params, timeout=10)
+        resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         articles = []
-        for item in data.get("results", []):
-            title = item.get("title")
-            url = item.get("url")
-            if title and url:
+        for item in data.get("status_updates", []):
+            title = item.get("title") or item.get("description")
+            url = item.get("article_url") or item.get("url") or ""
+            if title:
                 articles.append({"title": title, "url": url})
         return articles
-    except requests.exceptions.HTTPError as e:
-        print(f"CryptoPanic HTTP error: {e}")
-        print(f"Request URL: {resp.url}")
-        print(f"Response content: {resp.text}")
-        return []
     except Exception as e:
-        print(f"Error fetching Bitcoin news: {e}")
+        print(f"Error fetching Bitcoin news from CoinGecko: {e}")
+        print(f"Request URL: {url}")
+        if 'resp' in locals():
+            print(f"Response content: {resp.text}")
         return []
