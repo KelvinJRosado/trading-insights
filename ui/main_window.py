@@ -1,6 +1,8 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QStackedWidget, QApplication
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar, QAction, QApplication
 from PyQt5.QtCore import Qt
 from .theme import set_dark_theme, set_light_theme
+from plots.price_graph import PriceGraphWidget
+from data.fetch_prices import get_prices_for_timeframe
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -22,29 +24,36 @@ class MainWindow(QMainWindow):
         self.dark_action.triggered.connect(self.set_dark_mode)
         self.light_action.triggered.connect(self.set_light_mode)
 
-        # Placeholders for sections
-        self.price_graph_label = QLabel("[Price Graph Placeholder]", self)
-        self.price_graph_label.setAlignment(Qt.AlignCenter)
+        # Price graph widget
+        self.price_graph = PriceGraphWidget(self, dark_mode=True)
+        self.layout.addWidget(self.price_graph)
+
+        # Placeholders for other sections
         self.insights_label = QLabel("[Trading Insights Placeholder]", self)
         self.insights_label.setAlignment(Qt.AlignCenter)
         self.news_label = QLabel("[News Section Placeholder]", self)
         self.news_label.setAlignment(Qt.AlignCenter)
-
-        self.layout.addWidget(self.price_graph_label)
         self.layout.addWidget(self.insights_label)
         self.layout.addWidget(self.news_label)
 
         set_dark_theme(self)
+        self.load_price_data()
 
     def set_dark_mode(self):
         self.dark_action.setChecked(True)
         self.light_action.setChecked(False)
         set_dark_theme(self)
+        self.price_graph.set_theme(True)
 
     def set_light_mode(self):
         self.dark_action.setChecked(False)
         self.light_action.setChecked(True)
         set_light_theme(self)
+        self.price_graph.set_theme(False)
+
+    def load_price_data(self, timeframe="24h"):
+        data = get_prices_for_timeframe(timeframe)
+        self.price_graph.plot_prices(data, title=f"Bitcoin Price ({timeframe})")
 
 # For standalone testing
 if __name__ == "__main__":
