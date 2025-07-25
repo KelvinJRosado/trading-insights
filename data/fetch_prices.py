@@ -150,3 +150,122 @@ def get_prices_for_timeframe(timeframe: str, coin_id: str = "bitcoin"):
         return result
     else:
         raise ValueError("Unsupported timeframe. Use '1h', '24h', '7d', or '30d'.")
+
+
+def fetch_ohlcv_data(days: int, coin_id: str = "bitcoin"):
+    """
+    Fetch OHLCV (Open, High, Low, Close, Volume) data from CoinGecko API.
+    Falls back to market_chart endpoint if OHLC endpoint is unavailable.
+    
+    :param days: Number of days of data to fetch
+    :param coin_id: CoinGecko coin id (e.g., 'bitcoin', 'ethereum')
+    :return: List of OHLCV tuples (timestamp, open, high, low, close, volume) or None if failed
+    """
+    # Try OHLC endpoint first (for paid API users)
+    ohlc_url = f"{COINGECKO_API_URL}/coins/{coin_id}/ohlc"
+    market_chart_url = f"{COINGECKO_API_URL}/coins/{coin_id}/market_chart"
+    
+    # First attempt: Try OHLC endpoint
+    try:
+        params = {"vs_currency": "usd", "days": days}
+        resp = requests.get(ohlc_url, params=params, headers=HEADERS, timeout=10)
+        
+        if resp.status_code == 200:
+            ohlc_data = resp.json()
+            if ohlc_data and len(ohlc_data) > 0:
+                # OHLC data format: [[timestamp, open, high, low, close], ...]
+                result = []
+                for ohlc in ohlc_data:
+                    if len(ohlc) >= 5:
+                        timestamp = datetime.fromtimestamp(ohlc[0]/1000)
+                        # Note: Volume data not available in OHLC endpoint, set to 0
+                        result.append((timestamp, ohlc[1], ohlc[2], ohlc[3], ohlc[4], 0))
+                print(f"Successfully fetched OHLC data for {coin_id}: {len(result)} data points")
+                return result
+    except Exception as e:
+        print(f"OHLC endpoint failed for {coin_id}: {e}")
+    
+    # Fallback: Use market_chart endpoint to construct OHLCV data
+    try:
+        params = {"vs_currency": "usd", "days": days}
+        resp = requests.get(market_chart_url, params=params, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        
+        data = resp.json()
+        prices = data.get("prices", [])
+        volumes = data.get("total_volumes", [])
+        
+        if not prices:
+            print(f"No price data available for {coin_id}")
+            return None
+        
+        # Convert market_chart data to OHLCV format
+        # Group by time periods to create OHLC data
+        result = []
+        volume_dict = {v[0]: v[1] for v in volumes} if volumes else {}
+        
+        # For market_chart data, we only have single price points
+        # We'll use the price as close and estimate OHLC based on adjacent prices
+        for i, (ts, price) in enumerate(prices):
+            timestamp = datetime.fromtimestamp(ts/1000)
+            volume = volume_dict.get(ts, 0)
+            
+            # Use price as close, estimate others based on local context
+            close_price = price
+            
+            # Look at adjacent prices for OHLC estimation
+            prev_price = prices[i-1][1] if i > 0 else price
+            next_price = prices[i+1][1] if i < len(prices)-1 else price
+            
+            # Simple OHLC estimation from available data
+            open_price = prev_price
+            high_price = max(prev_price, price, next_price)
+            low_price = min(prev_price, price, next_price)
+            
+            result.append((timestamp, open_price, high_price, low_price, close_price, volume))
+        
+        print(f"Successfully converted market_chart to OHLCV for {coin_id}: {len(result)} data points")
+        return result
+        
+    except Exception as e:
+        print(f"Error fetching OHLCV data for {coin_id}: {e}")
+        return None
+
+
+def get_ohlcv_for_timeframe(timeframe: str, coin_id: str = "bitcoin"):
+    """
+    Get OHLCV data for a given timeframe.
+    :param timeframe: '1h', '24h', '7d', or '30d'
+    :param coin_id: CoinGecko coin id
+    :return: List of OHLCV tuples (timestamp, open, high, low, close, volume) or None if failed
+    """
+    cache_key = f"{coin_id}:ohlcv:{timeframe}"
+    if cache_key in _price_cache:
+        return _price_cache[cache_key]
+    
+    if timeframe == "1h":
+        data = fetch_ohlcv_data(1, coin_id=coin_id)
+        if data:
+            now = datetime.now()
+            one_hour_ago = now - timedelta(hours=1)
+            result = [(ts, o, h, l, c, v) for ts, o, h, l, c, v in data if ts >= one_hour_ago]
+            _price_cache[cache_key] = result
+            return result
+        return None
+    elif timeframe == "24h":
+        result = fetch_ohlcv_data(1, coin_id=coin_id)
+        if result:
+            _price_cache[cache_key] = result
+        return result
+    elif timeframe == "7d":
+        result = fetch_ohlcv_data(7, coin_id=coin_id)
+        if result:
+            _price_cache[cache_key] = result
+        return result
+    elif timeframe == "30d":
+        result = fetch_ohlcv_data(30, coin_id=coin_id)
+        if result:
+            _price_cache[cache_key] = result
+        return result
+    else:
+        raise ValueError("Unsupported timeframe. Use '1h', '24h', '7d', or '30d'.")

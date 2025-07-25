@@ -2,8 +2,9 @@ from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QMenuBar,
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from .theme import set_dark_theme, set_light_theme
 from plots.price_graph import PriceGraphWidget
-from data.fetch_prices import get_prices_for_timeframe
+from data.fetch_prices import get_prices_for_timeframe, get_ohlcv_for_timeframe
 from analysis.insights import get_trading_insights
+from analysis.enhanced_insights import get_enhanced_trading_insights
 from sklearn.linear_model import LinearRegression
 import numpy as np
 from collections import Counter
@@ -65,25 +66,23 @@ class LLMWorker(QThread):
         else:
             personality = f"You are {self.persona}, a financial advisor."
         
-        # Format all method insights for the prompt
+        # Format all method insights for the prompt (raw values only)
         insights_text = f"The cryptocurrency you are analyzing is {self.coin_name}.\n\n"
-        insights_text += "You have access to analysis from multiple methods. Here are the insights from each:\n\n"
+        insights_text += "You have access to raw indicator values from multiple methods. Here are the raw values from each method:\n\n"
         
         for i, method_data in enumerate(self.all_method_insights):
             insights_text += f"Method {i+1} - {method_data['method']}:\n"
-            insights_text += f"- Short-term: {method_data['short']}\n"
-            insights_text += f"- Medium-term: {method_data['medium']}\n" 
-            insights_text += f"- Long-term: {method_data['long']}\n"
-            insights_text += f"- Buy recommendation: {method_data['buy']}\n"
-            insights_text += f"- Sell recommendation: {method_data['sell']}\n"
-            insights_text += f"- Overall suggestion: {method_data['suggestion']}\n"
-            insights_text += f"- Reasoning: {method_data['reason']}\n\n"
+            insights_text += f"- High: {method_data.get('high', 'N/A')}\n"
+            insights_text += f"- Low: {method_data.get('low', 'N/A')}\n"
+            insights_text += f"- RSI: {method_data.get('rsi_value', 'N/A')}\n"
+            insights_text += f"- MA: {method_data.get('ma_value', 'N/A')}\n"
+            insights_text += f"- OHLCV array: {len(method_data.get('ohlcv_array', []))} data points\n\n"
         
         prompt = (
             f"{personality}\n\n"
             f"{insights_text}"
             "Your goal is to help your client make the greatest gains, but your advice should reflect your unique personality. "
-            f"Please analyze all these different methods' insights about {self.coin_name} and provide your consolidated recommendation in simple, friendly English for a non-expert investor. "
+            f"Please analyze all these different methods' raw indicator values about {self.coin_name} and provide your consolidated recommendation in simple, friendly English for a non-expert investor. "
             "Make sure your suggestions reflect your personal advisory style and consider the consensus and differences between the methods."
         )
         try:
@@ -249,32 +248,8 @@ class MainWindow(QMainWindow):
         for i, label in enumerate(advisor_names):
             tab = QWidget()
             tab.layout = QVBoxLayout(tab)
-            # Collapsible insights section
-            toolbox = QToolBox()
-            insights_widget = QWidget()
-            insights_layout = QVBoxLayout(insights_widget)
-            left_label = QLabel(f"[Suggestions for {label}]")
-            left_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            left_label.setWordWrap(True)
-            left_label.setStyleSheet("font-size: 13px; padding: 8px 0 8px 8px;")
-            left_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            insights_layout.addWidget(left_label)
-            toolbox.addItem(insights_widget, "Show Trading Insights")
-            toolbox.setCurrentIndex(-1)  # Minimized by default
-            toolbox.setVisible(False)  # Hidden by default
-            # Add a button to expand/collapse
-            toggle_btn = QPushButton("Show Trading Insights")
-            toggle_btn.setCheckable(True)
-            toggle_btn.setChecked(False)
-            def make_toggle(tb=toolbox, btn=toggle_btn):
-                def toggle():
-                    tb.setVisible(btn.isChecked())
-                    btn.setText("Hide Trading Insights" if btn.isChecked() else "Show Trading Insights")
-                return toggle
-            toggle_btn.clicked.connect(make_toggle())
-            tab.layout.addWidget(toggle_btn)
-            tab.layout.addWidget(toolbox)
-            # LLM output area (QTextBrowser, large font)
+            # Remove the QToolBox and toggle button for trading insights
+            # Only add the LLM output area
             right_browser = QTextBrowser()
             right_browser.setOpenExternalLinks(True)
             right_browser.setReadOnly(True)
@@ -285,9 +260,7 @@ class MainWindow(QMainWindow):
             right_browser.setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
             tab.layout.addWidget(right_browser, stretch=1)
             self.suggestion_tabs.addTab(tab, label)
-            self.suggestion_widgets.append(left_label)
             self.llm_widgets.append(right_browser)
-            self.suggestion_toolboxes.append(toolbox)
         self.suggestion_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.layout.addWidget(self.suggestion_tabs)
 
@@ -347,67 +320,67 @@ class MainWindow(QMainWindow):
         """Load and calculate insights using the best available data"""
         # Try to get longer-term data for better insights, with multiple fallbacks
         insights_data = None
-        
-        # Try different timeframes in order of preference
         timeframes = ["30d", "7d", "24h"]
         for timeframe in timeframes:
             try:
-                insights_data = get_prices_for_timeframe(timeframe, coin_id=self.selected_coin)
-                if insights_data and len(insights_data) >= 10:  # Need minimum data points
+                insights_data = get_ohlcv_for_timeframe(timeframe, coin_id=self.selected_coin)
+                if insights_data and len(insights_data) >= 10:
                     break
             except Exception as e:
                 print(f"Failed to fetch {timeframe} data: {e}")
                 continue
-        
         if not insights_data:
             print("Warning: Using mock data for insights calculation")
-        
-        prices = [price for _, price in insights_data] if insights_data else []
-        if len(prices) < 5:  # Minimum required for meaningful analysis
+        prices = [candle[4] for candle in insights_data] if insights_data else []
+        if len(prices) < 5:
             print("Insufficient data for analysis")
             return
-            
-        insights = get_trading_insights(prices)
-        self.display_insights(insights)
-        self.display_suggestions_and_consensus(insights, prices)
+        # Use get_trading_insights for technical, get_enhanced_trading_insights for ML
+        insights = get_trading_insights(prices, insights_data)
+        enhanced_ml_insights = get_enhanced_trading_insights(self.selected_coin, "7d")  # Use 7d for ML by default
+        # self.display_insights(insights)  # REMOVE THIS LINE
+        self.display_suggestions_and_consensus(insights, prices, enhanced_ml_insights)
         self.display_prediction(prices)
-    
-    def load_price_data(self, timeframe="7d"):
-        """Load both chart and insights data (used for initial load and coin changes)"""
-        self.load_chart_data(timeframe)
-        self.load_insights_data()
 
-    def display_insights(self, insights):
-        # Set the insights text in the currently selected tab's label
-        idx = self.suggestion_tabs.currentIndex()
-        if idx < 0 or idx >= len(self.suggestion_widgets):
-            return
-        label = self.suggestion_widgets[idx]
-        if not insights or insights['high'] is None or insights['low'] is None:
-            label.setText("No trading insights available.")
-            return
-        # Add tooltips for each metric
-        high = f'<span title="Highest price in the selected timeframe">High: {insights["high"]:.2f}</span>'
-        low = f'<span title="Lowest price in the selected timeframe">Low: {insights["low"]:.2f}</span>'
-        rsi = f'<span title="Relative Strength Index (momentum indicator, <30=oversold, >70=overbought)">RSI: {insights["rsi_value"]:.2f} ({insights["rsi_signal"].capitalize()})</span>'
-        ma = f'<span title="Moving Average (average price over a window)">MA: {insights["ma_value"]:.2f} ({insights["ma_signal"].capitalize()})</span>'
-        text = (
-            f"{high} &nbsp; {low} &nbsp; {rsi} &nbsp; {ma}"
-        )
-        label.setText(text)
+    # Remove the display_insights method entirely
 
-    def display_suggestions_and_consensus(self, insights, prices):
+    def display_suggestions_and_consensus(self, insights, prices, enhanced_ml_insights=None):
         advisor_names = ["Conservative Carl", "Aggressive Alex", "Balanced Bailey"]
-        methods = ["Technical Analysis", "Momentum Model", "Simple ML", "Llama Analysis"]
-        
-        # First, generate insights for all methods
+        methods = ["Technical Analysis", "Enhanced ML Analysis", "Momentum Model", "Llama Analysis"]
         all_method_insights = []
         for method in methods:
-            suggestion, reason, st, mt, lt, buy, sell = self._generate_method_insights(insights, prices, method)
-            all_method_insights.append({
-                'short': st, 'medium': mt, 'long': lt, 'buy': buy, 'sell': sell, 
-                'suggestion': suggestion, 'reason': reason, 'method': method
-            })
+            if method == "Enhanced ML Analysis" and enhanced_ml_insights is not None:
+                # Pass only raw values for advisors
+                all_method_insights.append({
+                    'method': method,
+                    'high': enhanced_ml_insights.get('high'),
+                    'low': enhanced_ml_insights.get('low'),
+                    'rsi_value': enhanced_ml_insights.get('rsi_value'),
+                    'ma_value': enhanced_ml_insights.get('ma_value'),
+                    'ohlcv_array': enhanced_ml_insights.get('ohlcv_array'),
+                })
+            else:
+                all_method_insights.append({
+                    'method': method,
+                    'high': insights.get('high'),
+                    'low': insights.get('low'),
+                    'rsi_value': insights.get('rsi_value'),
+                    'ma_value': insights.get('ma_value'),
+                    'ohlcv_array': insights.get('ohlcv_array'),
+                })
+        # Display each method's raw insights in the respective advisor tab
+        for i, advisor_name in enumerate(advisor_names):
+            method_data = all_method_insights[i]
+            left_text = (
+                f"<b>Method:</b> {method_data['method']}<br>"
+                f"<b>High:</b> {method_data['high']}<br>"
+                f"<b>Low:</b> {method_data['low']}<br>"
+                f"<b>RSI:</b> {method_data['rsi_value']}<br>"
+                f"<b>MA:</b> {method_data['ma_value']}<br>"
+                f"<b>OHLCV array:</b> {len(method_data['ohlcv_array'])} data points<br>"
+            )
+            self.llm_widgets[i].setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
+        # Consensus and LLM logic can be updated similarly if needed
         
         # Display each method's insights in the respective advisor tab and start LLM workers
         self._cleanup_threads()  # Clean up finished threads before starting new ones
@@ -418,15 +391,12 @@ class MainWindow(QMainWindow):
             method_data = all_method_insights[i]
             left_text = (
                 f"<b>Method:</b> {method_data['method']}<br>"
-                f"<b>Short-term:</b> {method_data['short']}<br>"
-                f"<b>Medium-term:</b> {method_data['medium']}<br>"
-                f"<b>Long-term:</b> {method_data['long']}<br>"
-                f"<b>Buy now:</b> {method_data['buy']}<br>"
-                f"<b>Sell now:</b> {method_data['sell']}<br>"
-                f"<b>Suggestion:</b> {method_data['suggestion']}<br>"
-                f"<b>Reasoning:</b> {method_data['reason']}"
+                f"<b>High:</b> {method_data['high']}<br>"
+                f"<b>Low:</b> {method_data['low']}<br>"
+                f"<b>RSI:</b> {method_data['rsi_value']}<br>"
+                f"<b>MA:</b> {method_data['ma_value']}<br>"
+                f"<b>OHLCV array:</b> {len(method_data['ohlcv_array'])} data points<br>"
             )
-            self.suggestion_widgets[i].setText(left_text)
             self.llm_widgets[i].setMarkdown("<span style='color:inherit;'><i>Loading advisor explanation...</i></span>")
             
             # Pass ALL method insights to each advisor
@@ -438,12 +408,11 @@ class MainWindow(QMainWindow):
         consensus = self._generate_consensus(all_method_insights)
         consensus_left = (
             f"<b>Consensus Insights</b><br>"
-            f"<b>Short-term:</b> {consensus['short']}<br>"
-            f"<b>Medium-term:</b> {consensus['medium']}<br>"
-            f"<b>Long-term:</b> {consensus['long']}<br>"
-            f"<b>Buy now:</b> {consensus['buy']}<br>"
-            f"<b>Sell now:</b> {consensus['sell']}<br>"
-            f"<b>Overall Suggestion:</b> {consensus['suggestion']}"
+            f"<b>High:</b> {consensus['high']:.2f}<br>"
+            f"<b>Low:</b> {consensus['low']:.2f}<br>"
+            f"<b>RSI:</b> {consensus['rsi_value']:.2f}<br>"
+            f"<b>MA:</b> {consensus['ma_value']:.2f}<br>"
+            f"<b>OHLCV array:</b> {len(consensus['ohlcv_array'])} data points<br>"
         )
         self.consensus_label.setText(consensus_left)
         self.consensus_label.setVisible(False)
@@ -563,81 +532,8 @@ class MainWindow(QMainWindow):
         return suggestion, reason, st, mt, lt, buy, sell
     
     def _ml_analysis_method(self, insights, prices):
-        """Simple ML-inspired analysis using statistical patterns"""
-        if len(prices) < 20:
-            return "Hold", "Insufficient data for ML analysis", "Unknown", "Unknown", "Unknown", "No", "No"
-        
-        # ML-style feature extraction
-        prices_array = np.array(prices[-20:])  # Last 20 periods for ML analysis
-        
-        # Feature 1: Price trend (linear regression slope)
-        X = np.arange(len(prices_array))
-        slope = np.polyfit(X, prices_array, 1)[0]
-        mean_price = np.mean(prices_array)
-        trend_strength = abs(slope) / mean_price * 1000 if mean_price != 0 else 0  # Normalize
-        
-        # Feature 2: Mean reversion (distance from moving average)
-        ma_20 = np.mean(prices_array)
-        current_price = prices_array[-1]
-        mean_reversion_score = (current_price - ma_20) / ma_20 * 100 if ma_20 != 0 else 0
-        
-        # Feature 3: Price stability (coefficient of variation)
-        mean_price = np.mean(prices_array)
-        cv = np.std(prices_array) / mean_price * 100 if mean_price != 0 else 0
-        
-        # Feature 4: Recent vs historical performance
-        recent_avg = np.mean(prices_array[-5:])
-        historical_avg = np.mean(prices_array[:10])
-        performance_ratio = (recent_avg / historical_avg - 1) * 100 if historical_avg != 0 else 0
-        
-        # ML-style scoring system
-        buy_score = 0
-        sell_score = 0
-        
-        # Trend component
-        if slope > 0:
-            buy_score += trend_strength * 2
-        else:
-            sell_score += trend_strength * 2
-            
-        # Mean reversion component
-        if mean_reversion_score < -5:  # Significantly below average
-            buy_score += abs(mean_reversion_score) * 1.5
-        elif mean_reversion_score > 5:  # Significantly above average
-            sell_score += mean_reversion_score * 1.5
-            
-        # Stability component (penalize high volatility)
-        if cv > 10:
-            buy_score *= 0.7
-            sell_score *= 0.7
-            
-        # Performance component
-        if performance_ratio > 3:
-            buy_score += performance_ratio * 0.8
-        elif performance_ratio < -3:
-            sell_score += abs(performance_ratio) * 0.8
-        
-        # ML decision logic
-        confidence_threshold = 8
-        if buy_score > confidence_threshold and buy_score > sell_score * 1.2:
-            confidence = min(buy_score / 15, 1.0) * 100
-            suggestion = f"<span style='color:#4caf50;'>ML Buy [{confidence:.0f}% conf.]</span>"
-            reason = f"ML model suggests buying: trend={slope:.2e}, mean-rev={mean_reversion_score:.1f}%, stability={cv:.1f}%"
-            st, mt, lt = "Statistically favorable", "Positive pattern detected", "Data-driven optimism"
-            buy, sell = "Yes [YES]", "No [NO]"
-        elif sell_score > confidence_threshold and sell_score > buy_score * 1.2:
-            confidence = min(sell_score / 15, 1.0) * 100
-            suggestion = f"<span style='color:#e53935;'>ML Sell [{confidence:.0f}% conf.]</span>"
-            reason = f"ML model suggests selling: trend={slope:.2e}, mean-rev={mean_reversion_score:.1f}%, stability={cv:.1f}%"
-            st, mt, lt = "Statistical headwinds", "Negative pattern detected", "Data-driven caution"
-            buy, sell = "No [NO]", "Yes [YES]"
-        else:
-            suggestion = f"<span style='color:#ffb300;'>ML Hold [Low conf.]</span>"
-            reason = f"ML model inconclusive: buy_score={buy_score:.1f}, sell_score={sell_score:.1f}, volatility={cv:.1f}%"
-            st, mt, lt = "Mixed statistical signals", "Model uncertainty", "Requires more data"
-            buy, sell = "No [NO]", "No [NO]"
-        
-        return suggestion, reason, st, mt, lt, buy, sell
+        """DEPRECATED: Use _enhanced_ml_analysis_method instead for advisors"""
+        return "See Enhanced ML Analysis", "Use the new ML system for advisor logic", "-", "-", "-", "-", "-"
     
     def _llama_analysis_method(self, insights, prices):
         """AI-powered analysis using Llama to analyze raw price data"""
@@ -778,26 +674,19 @@ Be concise and focus on what the price patterns suggest."""
         return suggestion, reason, st, mt, lt, buy, sell
 
     def _generate_consensus(self, all_suggestions):
-        # Majority vote for buy/sell, most common for other fields
-        def most_common(lst):
-            return Counter(lst).most_common(1)[0][0] if lst else ""
+        # Consensus for raw values: use mean for numeric, union for arrays
+        def mean(values):
+            vals = [v for v in values if v is not None]
+            return sum(vals) / len(vals) if vals else None
+
         consensus = {
-            'short': most_common([s['short'] for s in all_suggestions]),
-            'medium': most_common([s['medium'] for s in all_suggestions]),
-            'long': most_common([s['long'] for s in all_suggestions]),
-            'buy': most_common([s['buy'] for s in all_suggestions]),
-            'sell': most_common([s['sell'] for s in all_suggestions]),
-            'suggestion': most_common([s['suggestion'] for s in all_suggestions]),
+            'method': 'Consensus',
+            'high': mean([s.get('high') for s in all_suggestions]),
+            'low': mean([s.get('low') for s in all_suggestions]),
+            'rsi_value': mean([s.get('rsi_value') for s in all_suggestions]),
+            'ma_value': mean([s.get('ma_value') for s in all_suggestions]),
+            'ohlcv_array': sum([s.get('ohlcv_array', []) for s in all_suggestions], []),
         }
-        # Add text fallback for consensus suggestion
-        suggestion = consensus['suggestion']
-        if 'buy' in suggestion.lower():
-            suggestion = f"<span style='color:#4caf50;'>Consider buying. [YES]</span>"
-        elif 'sell' in suggestion.lower():
-            suggestion = f"<span style='color:#e53935;'>Consider selling. [NO]</span>"
-        else:
-            suggestion = f"<span style='color:#ffb300;'>Hold or wait. [WAIT]</span>"
-        consensus['suggestion'] = suggestion
         return consensus
 
     def display_prediction(self, prices):
@@ -886,6 +775,27 @@ Be concise and focus on what the price patterns suggest."""
         worker.finished.connect(lambda: self._cleanup_threads())
         self.llm_threads.append(worker)
         worker.start()
+
+    def _enhanced_ml_analysis_method(self, enhanced_ml_insights):
+        """Use the enhanced ML analysis and pass raw data to advisors"""
+        ml_analysis = enhanced_ml_insights.get('ml_analysis', {})
+        ml_signals = enhanced_ml_insights.get('ml_signals', {})
+        confidence = enhanced_ml_insights.get('ml_confidence', 0)
+        technical_summary = enhanced_ml_insights.get('technical_summary', '')
+        # Instead of buy/sell, just summarize the numbers for the advisors
+        suggestion = f"<span style='color:#2196f3;'>ML Model Outputs</span>"
+        reason = f"Raw ML predictions: {ml_analysis.get('predictions', {})}, Model scores: {ml_analysis.get('model_scores', {})}, Confidence: {confidence:.2f}"
+        st = f"ML signals: {ml_signals}"
+        mt = f"Feature importance: {ml_analysis.get('feature_importance', {})}"
+        lt = technical_summary
+        buy = "(see raw data)"
+        sell = "(see raw data)"
+        return suggestion, reason, st, mt, lt, buy, sell, {'ml_analysis': ml_analysis, 'ml_signals': ml_signals, 'confidence': confidence}
+
+    def load_price_data(self, timeframe="7d"):
+        """Load both chart and insights data (used for initial load and coin changes)"""
+        self.load_chart_data(timeframe)
+        self.load_insights_data()
 
 # For standalone testing
 if __name__ == "__main__":

@@ -51,17 +51,22 @@ def basic_buy_sell_signals(prices, window=14):
     return signals
 
 
-def get_trading_insights(prices, window=14):
+def get_trading_insights(prices, ohlcv_array, window=14):
     """
-    Aggregate trading insights: high, low, and buy/sell signals.
+    Aggregate trading insights: high, low, and raw indicator values.
     :param prices: List of float prices
+    :param ohlcv_array: List of OHLCV tuples (timestamp, open, high, low, close, volume)
     :param window: Window for indicators
-    :return: Dict of insights
+    :return: Dict of raw insights
     """
-    high, low = get_high_low(prices)
-    signals = basic_buy_sell_signals(prices, window)
+    high = max(prices) if prices else None
+    low = min(prices) if prices else None
+    ma = moving_average(prices, window)
+    rsi = relative_strength_index(prices, period=window)
     return {
         'high': high,
         'low': low,
-        **signals
+        'ma_value': ma[-1] if ma and ma[-1] is not None else None,
+        'rsi_value': rsi[-1] if rsi and rsi[-1] is not None else None,
+        'ohlcv_array': ohlcv_array
     }
